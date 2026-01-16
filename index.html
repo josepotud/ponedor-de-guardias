@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestor de Guardias - Pro</title>
+    <title>Gestor de Guardias - Pro Fixed</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -224,7 +224,7 @@
             <div id="staffingControls" class="hidden flex justify-center items-center bg-blue-50 p-3 border-b border-blue-100">
                 <label class="text-xs font-bold text-blue-700 mr-2">Aplicar Nº Plazas:</label>
                 <input type="number" id="modalStaffingCount" value="2" min="0" class="w-16 border border-blue-300 rounded p-1 text-center font-bold focus:ring-2 focus:ring-blue-400 outline-none">
-                <span class="text-xs text-blue-400 ml-2"></span>
+                <span class="text-xs text-blue-400 ml-2">(Toca un día para aplicar)</span>
             </div>
             
             <div class="p-4">
@@ -251,14 +251,21 @@
         let modalMode = 'block'; 
         let currentPersonId = null;
 
+        // --- HELPER: LOCAL ISO DATE ---
+        function getISO(d) {
+            const z = n => n < 10 ? '0'+n : n;
+            return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`;
+        }
+
+        // --- INIT ---
         document.addEventListener('DOMContentLoaded', () => {
             loadState();
             if(!appData.startDate) {
                 const today = new Date();
                 const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
                 const endMonth = new Date(today.getFullYear(), today.getMonth() + 2, 0);
-                appData.startDate = nextMonth.toISOString().split('T')[0];
-                appData.endDate = endMonth.toISOString().split('T')[0];
+                appData.startDate = getISO(nextMonth);
+                appData.endDate = getISO(endMonth);
                 saveState();
             }
             document.getElementById('startDate').value = appData.startDate;
@@ -268,7 +275,6 @@
             updateHistoryBadge();
             if(appData.schedule.length > 0) renderResults(0);
 
-            // Click outside modal
             document.getElementById('calendarModal').addEventListener('click', function(e) {
                 if(e.target === this) closeModal();
             });
@@ -351,7 +357,7 @@
             // Cleanup
             document.getElementById('newPersonName').value = '';
             document.getElementById('newPersonMin').value = '';
-            document.getElementById('newPersonMax').value = ''; // Empty default
+            document.getElementById('newPersonMax').value = ''; 
             document.getElementById('newPersonDoublets').checked = false;
             document.getElementById('newPersonName').focus();
             
@@ -417,11 +423,13 @@
             document.getElementById('modalTitle').innerText = 'Excepciones Plazas'; 
             document.getElementById('personModalControls').classList.add('hidden'); 
             document.getElementById('staffingControls').classList.remove('hidden');
-            // Set default value in modal input to what's in main view or 2
             document.getElementById('modalStaffingCount').value = appData.defaultSlots || 2;
             openModal(); 
         }
-        function openModal() { document.getElementById('calendarModal').classList.remove('hidden'); document.getElementById('calendarModal').classList.add('flex'); if(appData.startDate) viewDate = new Date(appData.startDate); renderCalendar(); }
+        function openModal() { document.getElementById('calendarModal').classList.remove('hidden'); document.getElementById('calendarModal').classList.add('flex'); if(appData.startDate) { 
+            const [y,m,d] = appData.startDate.split('-').map(Number);
+            viewDate = new Date(y, m-1, d); 
+        } renderCalendar(); }
         function closeModal() { document.getElementById('calendarModal').classList.add('hidden'); document.getElementById('calendarModal').classList.remove('flex'); saveState(); renderPeople(); }
         
         function changeMonth(d) { 
@@ -445,13 +453,15 @@
             let blockedArr=[], suggestedArr=[], holidaysArr=appData.holidays;
             if(modalMode==='person') { const p=appData.people.find(x=>x.id===currentPersonId); if(p){ blockedArr=p.blocked; suggestedArr=p.suggested||[]; } }
 
-            const min = new Date(appData.startDate); min.setHours(0,0,0,0);
-            const max = new Date(appData.endDate); max.setHours(0,0,0,0);
+            const [sy,sm,sd] = appData.startDate.split('-').map(Number);
+            const [ey,em,ed] = appData.endDate.split('-').map(Number);
+            const min = new Date(sy, sm-1, sd); 
+            const max = new Date(ey, em-1, ed);
             const defaultSlots = parseInt(document.getElementById('defaultSlots').value) || 1;
 
             for(let d=1; d<=last.getDate(); d++) {
-                const cur = new Date(y, m, d); cur.setHours(0,0,0,0);
-                const iso = cur.toISOString().split('T')[0];
+                const cur = new Date(y, m, d); 
+                const iso = getISO(cur);
                 const div = document.createElement('div');
                 div.innerText = d;
                 
@@ -465,8 +475,7 @@
                     } else if(modalMode==='holiday' && holidaysArr.includes(iso)) cls="day-holiday";
                     else if(modalMode==='staffing') {
                         const count = appData.staffing[iso] !== undefined ? appData.staffing[iso] : defaultSlots;
-                        // Always show badge if not default, or if > 1 for visibility
-                        if (count !== defaultSlots || count > 1) {
+                        if (count > 1 || count !== defaultSlots) {
                             cls="day-multi-staff";
                             div.innerHTML = `${d} <span class="badge">x${count}</span>`;
                         }
@@ -501,7 +510,6 @@
 
         // --- MANUAL EDITS ---
         function clearSlot(dateIso, pid) {
-            // Find specific slot
             const slot = appData.schedule.find(s => s.date === dateIso && s.pid === pid);
             if(slot) {
                 if(!appData.manualBans) appData.manualBans = {};
@@ -517,7 +525,11 @@
 
         // --- ALGORITHM ---
         function getDatesRange(s, e) {
-            const a=[]; let c=new Date(s); const end=new Date(e);
+            const a=[]; 
+            const [sy, sm, sd] = s.split('-').map(Number);
+            const [ey, em, ed] = e.split('-').map(Number);
+            let c = new Date(sy, sm-1, sd);
+            const end = new Date(ey, em-1, ed);
             while(c<=end){ a.push(new Date(c)); c.setDate(c.getDate()+1); }
             return a;
         }
@@ -525,7 +537,7 @@
         function getDayType(d, iso) {
             if(appData.holidays.includes(iso)) return 'HOLIDAY';
             const tmr = new Date(d); tmr.setDate(tmr.getDate()+1);
-            if(appData.holidays.includes(tmr.toISOString().split('T')[0])) return 'EVE';
+            if(appData.holidays.includes(getISO(tmr))) return 'EVE';
             const w=d.getDay();
             if(w===0||w===6) return 'WEEKEND';
             if(w===5) return 'FRIDAY';
@@ -554,9 +566,14 @@
                 if(p.suggested && p.suggested.length > 1) {
                     p.suggested.sort();
                     for(let i = p.suggested.length - 1; i > 0; i--) {
-                        const d1 = new Date(p.suggested[i]);
-                        const d2 = new Date(p.suggested[i-1]);
-                        const diffTime = Math.abs(d1 - d2);
+                        // Date parsing consistency check not needed if iso format YYYY-MM-DD
+                        // but logic to remove consecutive remains valid
+                        const [y1, m1, d1] = p.suggested[i].split('-').map(Number);
+                        const [y2, m2, d2] = p.suggested[i-1].split('-').map(Number);
+                        const dt1 = new Date(y1, m1-1, d1);
+                        const dt2 = new Date(y2, m2-1, d2);
+                        
+                        const diffTime = Math.abs(dt1 - dt2);
                         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
                         if(diffDays === 1) {
                             p.suggested.splice(i, 1); 
@@ -567,7 +584,10 @@
 
             setTimeout(() => {
                 const dates = getDatesRange(appData.startDate, appData.endDate);
-                const d1=new Date(appData.startDate), d2=new Date(appData.endDate);
+                const [sy,sm,sd] = appData.startDate.split('-').map(Number);
+                const [ey,em,ed] = appData.endDate.split('-').map(Number);
+                const d1 = new Date(sy, sm-1, sd);
+                const d2 = new Date(ey, em-1, ed);
                 const curMonths = Math.max(1, (d2.getFullYear()-d1.getFullYear())*12 + (d2.getMonth()-d1.getMonth())+1);
 
                 let bestRes = null, minU = Infinity, bestStd = Infinity;
@@ -622,7 +642,7 @@
 
             for(let i=0; i<dates.length; i++) {
                 const date = dates[i];
-                const iso = date.toISOString().split('T')[0];
+                const iso = getISO(date);
                 const type = getDayType(date, iso);
                 const isFriEve = (type==='FRIDAY'||type==='EVE');
                 const isHigh = (type === 'HOLIDAY' || type === 'WEEKEND');
@@ -668,7 +688,13 @@
                     });
 
                     if(!pool.length) {
-                        schedule.push({date:iso, pid:null, name:null, type, idx: i}); unassignedTotal++; break;
+                        // Push empty slots to meet quota visually
+                        const missing = needed - assignedToday.length;
+                        for(let k=0; k<missing; k++) {
+                            schedule.push({date:iso, pid:null, name:null, type, idx: i}); 
+                            unassignedTotal++; 
+                        }
+                        break;
                     }
 
                     pool.forEach(p => {
@@ -785,7 +811,10 @@
             const allIds = new Set(appData.people.map(p=>p.id));
             if(appData.history) Object.keys(appData.history).forEach(k => allIds.add(k));
             const statsList = [];
-            const d1=new Date(appData.startDate), d2=new Date(appData.endDate);
+            const [sy,sm,sd] = appData.startDate.split('-').map(Number);
+            const [ey,em,ed] = appData.endDate.split('-').map(Number);
+            const d1 = new Date(sy, sm-1, sd);
+            const d2 = new Date(ey, em-1, ed);
             const curMonths = Math.max(1, (d2.getFullYear()-d1.getFullYear())*12 + (d2.getMonth()-d1.getMonth())+1);
 
             allIds.forEach(id => {
@@ -825,10 +854,12 @@
         // --- PDF ---
         function downloadPDF(mode) {
             const { jsPDF } = window.jspdf;
-            const doc = new jsPDF('l', 'mm', 'a4'); // LANDSCAPE
+            const doc = new jsPDF('l', 'mm', 'a4'); 
             
-            const startDate = new Date(appData.startDate);
-            const endDate = new Date(appData.endDate);
+            const [sy,sm,sd] = appData.startDate.split('-').map(Number);
+            const [ey,em,ed] = appData.endDate.split('-').map(Number);
+            const startDate = new Date(sy, sm-1, sd);
+            const endDate = new Date(ey, em-1, ed);
             const monthName = startDate.toLocaleString('es-ES', { month: 'long', year: 'numeric' }).toUpperCase();
 
             doc.setFontSize(16);
@@ -844,7 +875,7 @@
 
             while (iterDate <= endDate || currentWeek.some(d => d !== null)) {
                 let dayIdx = iterDate.getDay() - 1; if (dayIdx === -1) dayIdx = 6;
-                const iso = iterDate.toISOString().split('T')[0];
+                const iso = getISO(iterDate);
                 const inRange = (iterDate >= startDate && iterDate <= endDate);
                 
                 if (inRange) {
