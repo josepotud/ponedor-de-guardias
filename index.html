@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestor de Guardias - Edición Avanzada</title>
+    <title>Gestor de Guardias - Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -48,7 +48,7 @@
     <header class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40">
         <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
             <h1 class="text-lg md:text-xl font-bold text-gray-800 flex items-center">
-                <i class="fas fa-edit mr-2 text-blue-600"></i>
+                <i class="fas fa-user-md mr-2 text-blue-600"></i>
                 <span class="hidden md:inline">Gestor de Guardias Pro</span>
                 <span class="md:hidden">Guardias</span>
             </h1>
@@ -60,8 +60,8 @@
                 
                 <div class="h-8 w-px bg-gray-300 mx-1"></div>
 
-                <button onclick="exportData()" class="text-gray-600 hover:bg-gray-100 p-2 rounded" title="Guardar Copia de Seguridad (Estado actual)"><i class="fas fa-save"></i></button>
-                <button onclick="triggerImport()" class="text-gray-600 hover:bg-gray-100 p-2 rounded" title="Restaurar Copia"><i class="fas fa-folder-open"></i></button>
+                <button onclick="exportData()" class="text-gray-600 hover:bg-gray-100 p-2 rounded" title="Guardar Copia"><i class="fas fa-save"></i></button>
+                <button onclick="triggerImport()" class="text-gray-600 hover:bg-gray-100 p-2 rounded" title="Cargar Copia"><i class="fas fa-folder-open"></i></button>
                 <input type="file" id="fileInput" class="hidden" accept=".json" onchange="importData(this)">
                 <button onclick="resetData()" class="text-red-500 hover:bg-red-50 p-2 rounded" title="Reset Total"><i class="fas fa-trash-alt"></i></button>
             </div>
@@ -139,12 +139,15 @@
                     <div>
                         <h2 class="font-bold text-gray-700 text-lg">Resultados (Acumulado)</h2>
                     </div>
-                    <div class="flex gap-2">
-                         <button onclick="downloadReportJSON()" class="bg-purple-600 hover:bg-purple-700 text-white text-xs px-4 py-2 rounded font-bold transition shadow-sm flex items-center" title="Descargar contabilidad para futuro">
-                            <i class="fas fa-file-invoice-dollar mr-2"></i> Contabilidad (JSON)
+                    <div class="flex gap-2 flex-wrap justify-end">
+                         <button onclick="downloadReportJSON()" class="bg-purple-600 hover:bg-purple-700 text-white text-xs px-3 py-2 rounded font-bold transition shadow-sm flex items-center">
+                            <i class="fas fa-code mr-1"></i> JSON
                         </button>
-                        <button onclick="downloadPDF()" class="bg-red-600 hover:bg-red-700 text-white text-xs px-4 py-2 rounded font-bold transition shadow-sm flex items-center">
-                            <i class="fas fa-file-pdf mr-2"></i> PDF
+                        <button onclick="downloadPDF('schedule')" class="bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-2 rounded font-bold transition shadow-sm flex items-center">
+                            <i class="fas fa-file-pdf mr-1"></i> Calendario
+                        </button>
+                        <button onclick="downloadPDF('debug')" class="bg-gray-600 hover:bg-gray-700 text-white text-xs px-3 py-2 rounded font-bold transition shadow-sm flex items-center">
+                            <i class="fas fa-bug mr-1"></i> Auditoría
                         </button>
                     </div>
                 </div>
@@ -197,11 +200,12 @@
 
     <!-- Calendar Modal -->
     <div id="calendarModal" class="fixed inset-0 bg-black bg-opacity-60 z-50 hidden flex items-center justify-center backdrop-blur-sm p-4">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all duration-200" onclick="event.stopPropagation()">
             <div class="bg-gray-50 p-4 border-b flex justify-between items-center">
                 <h3 id="modalTitle" class="font-bold text-gray-800">Calendario</h3>
                 <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
             </div>
+            <!-- Person Controls -->
             <div id="personModalControls" class="flex justify-center p-2 gap-4 hidden bg-white border-b border-gray-100">
                 <label class="flex items-center text-xs font-bold cursor-pointer">
                     <input type="radio" name="dayAction" value="block" checked class="text-red-500 mr-1" onchange="renderCalendar()"> 
@@ -214,7 +218,7 @@
             </div>
             <!-- Staffing Hints -->
             <div id="staffingControls" class="hidden text-center text-xs text-gray-500 bg-blue-50 p-2">
-                Click Izq: +1 | Click Der: -1
+                Toca para añadir plaza. Cicla: 1->2->3...
             </div>
             <div class="p-4">
                 <div class="flex justify-between items-center mb-4">
@@ -235,7 +239,8 @@
 
     <script>
         // --- STATE ---
-        let appData = { startDate: '', endDate: '', holidays: [], staffing: {}, people: [], schedule: [], history: {}, importedFiles: [] };
+        // manualBans: { "2024-01-01": ["pid1", "pid2"] } - Prevents re-assignment to same slot
+        let appData = { startDate: '', endDate: '', holidays: [], staffing: {}, people: [], schedule: [], history: {}, importedFiles: [], manualBans: {} };
         let viewDate = new Date();
         let modalMode = 'block'; 
         let currentPersonId = null;
@@ -255,6 +260,11 @@
             renderPeople();
             updateHistoryBadge();
             if(appData.schedule.length > 0) renderResults(0);
+
+            // Click outside modal
+            document.getElementById('calendarModal').addEventListener('click', function(e) {
+                if(e.target === this) closeModal();
+            });
         });
 
         function saveStateInputs() {
@@ -272,9 +282,8 @@
         // --- HISTORY IMPORT ---
         function importHistory(el) {
             const f = el.files[0]; if(!f) return;
-            // Prevent duplicate file import (basic check by name)
             if(appData.importedFiles && appData.importedFiles.includes(f.name)) {
-                if(!confirm(`Parece que ya has importado "${f.name}". ¿Quieres importarlo de nuevo y sumar los datos?`)) {
+                if(!confirm(`Parece que ya has importado "${f.name}". ¿Quieres importarlo de nuevo?`)) {
                     el.value = ''; return;
                 }
             }
@@ -459,6 +468,7 @@
                         } else if(modalMode==='staffing') {
                             let count = appData.staffing[iso] || 1;
                             count++;
+                            if(count > 3) count = 1; // Cycle max 3 for UI cleanliness
                             appData.staffing[iso] = count;
                         } else if(modalMode==='person') {
                             const p=appData.people.find(x=>x.id===currentPersonId);
@@ -472,13 +482,6 @@
                         }
                         renderCalendar();
                     };
-                    if(modalMode === 'staffing') {
-                        div.oncontextmenu = (e) => {
-                            e.preventDefault();
-                            let count = appData.staffing[iso] || 1;
-                            if (count > 1) { count--; appData.staffing[iso] = count; renderCalendar(); }
-                        };
-                    }
                 }
                 grid.appendChild(div);
             }
@@ -486,13 +489,18 @@
 
         // --- MANUAL EDITS ---
         function clearSlot(dateIso, pid) {
-            // Find specific slot in schedule
+            // Find specific slot
             const slot = appData.schedule.find(s => s.date === dateIso && s.pid === pid);
             if(slot) {
+                // Add to manual ban list for this date to prevent re-fill with same person
+                if(!appData.manualBans) appData.manualBans = {};
+                if(!appData.manualBans[dateIso]) appData.manualBans[dateIso] = [];
+                if(!appData.manualBans[dateIso].includes(pid)) appData.manualBans[dateIso].push(pid);
+
                 slot.pid = null;
                 slot.name = null;
                 saveState();
-                renderResults(0); // Update UI
+                renderResults(0); 
             }
         }
 
@@ -517,6 +525,9 @@
             if(!appData.people.length) return Swal.fire('Error', 'Sin personal', 'error');
             saveStateInputs();
             
+            // Clear manual bans if generating from scratch
+            if(!preserveExisting) appData.manualBans = {};
+
             document.getElementById('loadingOverlay').classList.remove('hidden');
             document.getElementById('loadingOverlay').classList.add('flex');
             
@@ -528,19 +539,51 @@
                 document.getElementById('loadingSubtitle').innerText = "Calculando desde cero";
             }
 
-            // Sanitize suggestions
+            // Sanitize suggestions: Group streaks and random pick
+            // Logic: Iterate sorted dates. If i and i+1 consecutive, group them. 
+            // Then for each group, pick random valid non-consecutive days.
             appData.people.forEach(p => {
                 if(p.suggested && p.suggested.length > 1) {
                     p.suggested.sort();
-                    for(let i = p.suggested.length - 1; i > 0; i--) {
-                        const d1 = new Date(p.suggested[i]);
-                        const d2 = new Date(p.suggested[i-1]);
-                        const diffTime = Math.abs(d1 - d2);
-                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-                        if(diffDays === 1) {
-                            p.suggested.splice(i, 1); 
-                        }
-                    }
+                    let validSet = new Set(p.suggested);
+                    // Naive approach: Just randomize the removal of consecutives 
+                    // This is complex to do perfectly "random" without graph theory, 
+                    // simplified: Shuffle then remove conflicts.
+                    // Better: Randomly pick Start index (0 or 1) for streaks?
+                    // Let's do a simple shuffle-based conflict resolution.
+                    
+                    // Temp logic for this generation step (don't modify user data permanent)
+                    // We will do it inside simulation logic or clone p.suggested.
+                    // User asked to "not delete all but first", but pick randomly.
+                    // The simplest is to keep all valid ones.
+                    // Let's filter p.suggested in place for simplicity of this version.
+                    
+                    // Actually, modifying p.suggested permanently might annoy user. 
+                    // Let's trust the simulation to pick best fit from suggestions if we treat them as high priority candidates.
+                    // But user said "Sanitize". Okay, let's keep it simple: 
+                    // If user selects Mon,Tue,Wed. We pick Mon+Wed OR Tue. Randomly.
+                    
+                    // Implementation: Identify streaks.
+                    let kept = [];
+                    let dates = p.suggested.map(d => new Date(d));
+                    
+                    // Simple random pruning
+                    let shuffled = [...p.suggested].sort(() => 0.5 - Math.random());
+                    let finalSelection = [];
+                    
+                    shuffled.forEach(s => {
+                        // Check if s conflicts with any already selected
+                        const sDate = new Date(s);
+                        const conflict = finalSelection.some(f => {
+                            const fDate = new Date(f);
+                            const diff = Math.abs(sDate - fDate) / (1000*60*60*24);
+                            return diff === 1;
+                        });
+                        if(!conflict) finalSelection.push(s);
+                    });
+                    p.activeSuggestions = finalSelection; // Use this temp property in sim
+                } else {
+                    p.activeSuggestions = p.suggested || [];
                 }
             });
 
@@ -550,8 +593,6 @@
                 const curMonths = Math.max(1, (d2.getFullYear()-d1.getFullYear())*12 + (d2.getMonth()-d1.getMonth())+1);
 
                 let bestRes = null, minU = Infinity, bestStd = Infinity;
-                
-                // If preserving, we run fewer iterations as search space is constrained
                 const iterations = preserveExisting ? 50 : 150; 
 
                 for(let i=0; i<iterations; i++) {
@@ -576,10 +617,9 @@
         function runSimulation(dates, curMonths, existingSchedule) {
             let schedule = [];
             let unassignedTotal = 0;
-            
-            // Reconstruct schedule if preserving
-            // We need a way to look up existing assignments by date
             let fixedSlots = {}; 
+            
+            // Build fixed slots mapping to avoid overwriting existing
             if(existingSchedule && existingSchedule.length > 0) {
                 existingSchedule.forEach(s => {
                     if(s.pid) {
@@ -609,33 +649,27 @@
                 const isHigh = (type === 'HOLIDAY' || type === 'WEEKEND');
                 
                 const needed = appData.staffing[iso] || 1;
-                
                 let assignedToday = [];
-                let slotsFilledByPreservation = 0;
 
-                // 0. Pre-fill from Fixed Slots (Preservation Mode)
+                // 0. Pre-fill Preserved
                 if(fixedSlots[iso]) {
                     fixedSlots[iso].forEach(pid => {
-                        // Validate person exists
                         const p = appData.people.find(x => x.id === pid);
-                        if(p) {
-                            assign(p.id, iso, type, i, isFriEve, stats, assignedToday);
-                            slotsFilledByPreservation++;
-                        }
+                        if(p) assign(p.id, iso, type, i, isFriEve, stats, assignedToday);
                     });
                 }
 
-                // If fully filled by preservation, continue
                 if(assignedToday.length >= needed) continue;
 
-                // Calculate current Minimum Friday Count among all people to enforce balance
                 let minFriCount = Infinity;
                 Object.values(stats).forEach(s => { if (s.curFri < minFriCount) minFriCount = s.curFri; });
 
-                // 1. Mandatory Suggestions
+                // 1. Mandatory Suggestions (Active sanitized ones)
                 appData.people.forEach(p => {
-                    if (p.suggested && p.suggested.includes(iso)) {
-                        if (assignedToday.length < needed && !assignedToday.includes(p.name)) {
+                    if (p.activeSuggestions && p.activeSuggestions.includes(iso)) {
+                        // Check bans
+                        const isBanned = appData.manualBans && appData.manualBans[iso] && appData.manualBans[iso].includes(p.id);
+                        if (!isBanned && assignedToday.length < needed && !assignedToday.includes(p.name)) {
                             assign(p.id, iso, type, i, isFriEve, stats, assignedToday);
                         }
                     }
@@ -646,11 +680,18 @@
                     let pool = appData.people.filter(p => {
                         if(assignedToday.includes(p.name)) return false;
                         const s = stats[p.id];
+                        
+                        // User Blocked
                         if(p.blocked.includes(iso)) return false;
+                        // Manual Ban (Deleted previously)
+                        if(appData.manualBans && appData.manualBans[iso] && appData.manualBans[iso].includes(p.id)) return false;
+                        
                         if(p.max && s.curTotal >= parseInt(p.max)) return false;
                         if((i - s.lastIndex) === 1) return false; 
                         if(!p.doublets && (i - s.lastIndex) === 2) return false;
+                        
                         if (isFriEve && s.curFri > minFriCount + 1) return false;
+
                         return true;
                     });
 
@@ -705,13 +746,18 @@
             return { schedule, unassigned: unassignedTotal, stdDev: Math.sqrt(variance), statsRef: stats };
         }
 
-        // --- GAP FILLING (SWAP LOGIC) ---
+        // --- GAP FILLING ---
         function fillGaps(schedule, stats, dates) {
             let gaps = schedule.filter(s => s.pid === null);
             gaps.forEach(gap => {
                 const dayIdx = gap.idx; 
+                // Filter banned
                 const candidates = appData.people.filter(p => !p.blocked.includes(gap.date));
+                
                 for (let p of candidates) {
+                    // Check manual ban
+                    if(appData.manualBans && appData.manualBans[gap.date] && appData.manualBans[gap.date].includes(p.id)) continue;
+
                     const prevAssignment = schedule.find(s => s.idx === dayIdx - 1 && s.pid === p.id);
                     if (prevAssignment) {
                         const nextAssignment = schedule.find(s => s.idx === dayIdx + 1 && s.pid === p.id);
@@ -766,6 +812,7 @@
                 tbody.appendChild(tr);
             });
 
+            // Stats
             const allIds = new Set(appData.people.map(p=>p.id));
             if(appData.history) Object.keys(appData.history).forEach(k => allIds.add(k));
             const statsList = [];
@@ -806,8 +853,8 @@
             `).join('');
         }
 
-        // --- PDF ---
-        function downloadPDF() {
+        // --- PDF GENERATORS ---
+        function downloadPDF(mode) {
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF('l', 'mm', 'a4'); // LANDSCAPE
             
@@ -816,8 +863,10 @@
             const monthName = startDate.toLocaleString('es-ES', { month: 'long', year: 'numeric' }).toUpperCase();
 
             doc.setFontSize(16);
-            doc.text(`CALENDARIO DE GUARDIAS - ${monthName}`, 14, 15);
+            if(mode === 'debug') doc.text(`AUDITORÍA DE BLOQUEOS - ${monthName}`, 14, 15);
+            else doc.text(`CALENDARIO DE GUARDIAS - ${monthName}`, 14, 15);
             
+            // --- CALENDAR RENDER ---
             const weeks = [];
             let currentWeek = new Array(7).fill(null);
             
@@ -831,10 +880,22 @@
                 const inRange = (iterDate >= startDate && iterDate <= endDate);
                 
                 if (inRange) {
-                    const assigned = appData.schedule.filter(s => s.date === iso);
                     const dayNum = iterDate.getDate();
                     let content = `${dayNum}`;
-                    if (assigned.length > 0) content += "\n" + assigned.map(a => a.name || "?").join("\n");
+                    
+                    if (mode === 'debug') {
+                        // Show Blocked and Suggested people
+                        const blocked = appData.people.filter(p => p.blocked.includes(iso)).map(p => p.name).join(', ');
+                        const suggested = appData.people.filter(p => p.suggested && p.suggested.includes(iso)).map(p => p.name).join(', ');
+                        
+                        if(suggested) content += `\n[SOL]: ${suggested}`;
+                        if(blocked) content += `\n[NO]: ${blocked}`;
+                        if(appData.holidays.includes(iso)) content += `\n(FESTIVO)`;
+                    } else {
+                        // Standard Schedule
+                        const assigned = appData.schedule.filter(s => s.date === iso);
+                        if (assigned.length > 0) content += "\n" + assigned.map(a => a.name || "?").join("\n");
+                    }
                     currentWeek[dayIdx] = content;
                 } else if (currentWeek.some(d => d !== null) || iterDate < startDate) {
                     if(iterDate >= startDate || currentWeek.length > 0) currentWeek[dayIdx] = ""; 
@@ -853,43 +914,46 @@
                 head: [['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']],
                 body: weeks,
                 theme: 'grid',
-                styles: { minCellHeight: 25, fontSize: 10, valign: 'top', halign: 'center', lineWidth: 0.1 },
-                headStyles: { fillColor: [41, 128, 185], textColor: 255 },
+                styles: { minCellHeight: 25, fontSize: 8, valign: 'top', halign: 'center', lineWidth: 0.1 },
+                headStyles: { fillColor: mode==='debug'?[100,100,100]:[41, 128, 185], textColor: 255 },
                 columnStyles: { 5: { fillColor: [240, 240, 250] }, 6: { fillColor: [240, 240, 250] } }
             });
 
-            doc.addPage();
-            doc.text("Resumen Contable (Cargas Separadas)", 14, 20);
-            
-            const rows = [];
-            const allIds = new Set(appData.people.map(p=>p.id));
-            if(appData.history) Object.keys(appData.history).forEach(k => allIds.add(k));
-
-            allIds.forEach(id => {
-                const activeP = appData.people.find(p => p.id === id);
-                const h = (appData.history && appData.history[id]) || { total:0, hol:0, sd:0, fri:0, months:0, name: activeP ? activeP.name : 'Unknown' };
-                let c = { t:0, h:0, s:0, f:0 };
-                appData.schedule.filter(s=>s.pid===id).forEach(s=>{
-                    c.t++; if(s.type==='HOLIDAY') c.h++; else if(s.type==='WEEKEND') c.s++; else if(s.type==='FRIDAY'||s.type==='EVE') c.f++;
-                });
+            if (mode !== 'debug') {
+                doc.addPage();
+                doc.text("Resumen Contable (Cargas Separadas)", 14, 20);
                 
-                rows.push([
-                    activeP ? activeP.name : `${h.name} (Baja)`,
-                    h.total+c.t,
-                    h.fri+c.f,
-                    h.sd+c.s,
-                    h.hol+c.h 
-                ]);
-            });
+                const rows = [];
+                const allIds = new Set(appData.people.map(p=>p.id));
+                if(appData.history) Object.keys(appData.history).forEach(k => allIds.add(k));
 
-            doc.autoTable({
-                startY: 25,
-                head: [['Nombre', 'Total Acum', 'Vier+Vís', 'Sáb+Dom', 'Fest']],
-                body: rows,
-                theme: 'striped'
-            });
+                allIds.forEach(id => {
+                    const activeP = appData.people.find(p => p.id === id);
+                    const h = (appData.history && appData.history[id]) || { total:0, hol:0, sd:0, fri:0, months:0, name: activeP ? activeP.name : 'Unknown' };
+                    let c = { t:0, h:0, s:0, f:0 };
+                    appData.schedule.filter(s=>s.pid===id).forEach(s=>{
+                        c.t++; if(s.type==='HOLIDAY') c.h++; else if(s.type==='WEEKEND') c.s++; else if(s.type==='FRIDAY'||s.type==='EVE') c.f++;
+                    });
+                    
+                    rows.push([
+                        activeP ? activeP.name : `${h.name} (Baja)`,
+                        h.total+c.t,
+                        h.fri+c.f,
+                        h.sd+c.s,
+                        h.hol+c.h 
+                    ]);
+                });
 
-            doc.save('calendario_guardias.pdf');
+                doc.autoTable({
+                    startY: 25,
+                    head: [['Nombre', 'Total Acum', 'Vier+Vís', 'Sáb+Dom', 'Fest']],
+                    body: rows,
+                    theme: 'striped'
+                });
+            }
+
+            const filename = mode === 'debug' ? 'auditoria_bloqueos.pdf' : 'calendario_guardias.pdf';
+            doc.save(filename);
         }
 
         // Utils
