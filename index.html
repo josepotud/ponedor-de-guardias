@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestor de Guardias - Balanceo Progresivo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+        .calendar-day { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border-radius: 4px; font-size: 0.8rem; user-select: none; cursor: pointer; transition: all 0.1s; }
+        
+        .day-standard:hover { background-color: #DBEAFE; transform: scale(1.05); }
+        .day-blocked { background-color: #EF4444; color: white; }
+        .day-holiday { background-color: #F59E0B; color: white; font-weight: bold; border: 2px solid #D97706; }
+        .day-disabled { background-color: #F3F4F6; color: #D1D5DB; cursor: not-allowed; }
+        
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 min-h-screen flex flex-col">
+
+    <!-- Loading -->
+    <div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-60 z-[60] hidden flex-col items-center justify-center text-white backdrop-blur-sm">
+        <div class="loader mb-4"></div>
+        <p class="font-bold text-lg">Calculando Distribución...</p>
+        <p class="text-sm opacity-80">Priorizando mes actual + compensación suave</p>
+    </div>
+
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+            <h1 class="text-lg md:text-xl font-bold text-gray-800 flex items-center">
+                <i class="fas fa-balance-scale-right mr-2 text-blue-600"></i>
+                <span class="hidden md:inline">Gestor Contable</span>
+                <span class="md:hidden">Gestor</span>
+            </h1>
+            <div class="flex gap-2">
+                <button onclick="document.getElementById('historyInput').click()" class="bg-purple-100 hover:bg-purple-200 text-purple-700 px-3 py-2 rounded border border-purple-300 transition text-sm font-bold flex items-center" title="Cargar JSON de meses anteriores">
+                    <i class="fas fa-upload mr-2"></i> Cargar Histórico
+                </button>
+                <input type="file" id="historyInput" class="hidden" accept=".json" onchange="importHistory(this)">
+                
+                <div class="h-8 w-px bg-gray-300 mx-1"></div>
+
+                <button onclick="exportData()" class="text-gray-600 hover:bg-gray-100 p-2 rounded" title="Copia Seguridad App"><i class="fas fa-save"></i></button>
+                <button onclick="triggerImport()" class="text-gray-600 hover:bg-gray-100 p-2 rounded" title="Restaurar App"><i class="fas fa-folder-open"></i></button>
+                <input type="file" id="fileInput" class="hidden" accept=".json" onchange="importData(this)">
+                <button onclick="resetData()" class="text-red-500 hover:bg-red-50 p-2 rounded" title="Borrar todo"><i class="fas fa-trash-alt"></i></button>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-grow max-w-7xl mx-auto px-4 py-8 w-full grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        <!-- Config -->
+        <div class="lg:col-span-1 space-y-6">
+            
+            <!-- Dates -->
+            <div class="bg-white p-5 rounded-lg shadow-sm border border-gray-200">
+                <h2 class="font-bold text-gray-700 mb-4 border-b pb-2 flex items-center justify-between">
+                    <span>1. Periodo Actual</span>
+                    <button onclick="openHolidayModal()" class="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded hover:bg-orange-200 transition">
+                        <i class="fas fa-star mr-1"></i>Festivos
+                    </button>
+                </h2>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-xs font-bold text-gray-500">INICIO</label>
+                        <input type="date" id="startDate" class="border p-2 rounded text-sm w-full outline-none focus:ring-2 focus:ring-blue-200" onchange="saveStateInputs()">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-gray-500">FIN</label>
+                        <input type="date" id="endDate" class="border p-2 rounded text-sm w-full outline-none focus:ring-2 focus:ring-blue-200" onchange="saveStateInputs()">
+                    </div>
+                </div>
+            </div>
+
+            <!-- People -->
+            <div class="bg-white p-5 rounded-lg shadow-sm border border-gray-200">
+                <div class="flex justify-between items-center mb-4 border-b pb-2">
+                    <h2 class="font-bold text-gray-700">2. Personal Activo</h2>
+                    <span id="historyBadge" class="hidden text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded font-bold">Historial Cargado</span>
+                </div>
+                
+                <div class="space-y-3 mb-4 bg-gray-50 p-3 rounded-md border border-gray-100">
+                    <input type="text" id="newPersonName" placeholder="Nombre" class="w-full border p-2 rounded text-sm focus:ring-2 focus:ring-blue-200 outline-none">
+                    <div class="flex gap-2">
+                         <input type="number" id="newPersonMin" placeholder="Mín" class="w-1/2 border p-2 rounded text-sm focus:ring-2 focus:ring-blue-200 outline-none">
+                         <input type="number" id="newPersonMax" placeholder="Máx" class="w-1/2 border p-2 rounded text-sm focus:ring-2 focus:ring-blue-200 outline-none">
+                    </div>
+                    <div class="flex items-center justify-between pt-1">
+                        <label class="flex items-center cursor-pointer select-none">
+                            <input type="checkbox" id="newPersonDoublets" class="h-4 w-4 text-blue-600 rounded">
+                            <span class="ml-2 text-xs text-gray-600 font-medium">Acepta Dobletes</span>
+                        </label>
+                        <button onclick="addPerson()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded text-xs font-bold uppercase tracking-wide transition shadow-sm">
+                            Añadir <i class="fas fa-plus ml-1"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="peopleList" class="space-y-2 max-h-[400px] overflow-y-auto pr-1"></div>
+            </div>
+
+            <button onclick="startGeneration()" class="w-full bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 text-white font-bold py-4 rounded-lg shadow-lg transform transition active:scale-95 flex flex-col items-center justify-center">
+                <span class="text-lg"><i class="fas fa-calculator mr-2"></i>Calcular Periodo</span>
+            </button>
+        </div>
+
+        <!-- Results -->
+        <div class="lg:col-span-2 space-y-6">
+            
+            <!-- Stats -->
+            <div id="statsPanel" class="bg-white p-5 rounded-lg shadow-sm border border-gray-200 hidden">
+                <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
+                    <div>
+                        <h2 class="font-bold text-gray-700 text-lg">Contabilidad Global</h2>
+                        <p class="text-xs text-gray-400">Balance: Mes Actual (Alta Prioridad) + Histórico (Baja Prioridad)</p>
+                    </div>
+                    <div class="flex gap-2">
+                         <button onclick="downloadReportJSON()" class="bg-purple-600 hover:bg-purple-700 text-white text-xs px-4 py-2 rounded font-bold transition shadow-sm flex items-center" title="Descargar datos contables acumulados">
+                            <i class="fas fa-file-invoice-dollar mr-2"></i> Guardar Contabilidad (JSON)
+                        </button>
+                        <button onclick="downloadPDF()" class="bg-red-600 hover:bg-red-700 text-white text-xs px-4 py-2 rounded font-bold transition shadow-sm flex items-center">
+                            <i class="fas fa-file-pdf mr-2"></i> PDF
+                        </button>
+                    </div>
+                </div>
+                <div class="overflow-x-auto rounded border border-gray-100">
+                    <table class="w-full text-sm text-left">
+                        <thead class="bg-gray-50 text-xs uppercase text-gray-600 font-bold border-b">
+                            <tr>
+                                <th class="px-4 py-3">Nombre</th>
+                                <th class="px-4 py-3 text-center bg-blue-50 text-blue-800">Este Mes</th>
+                                <th class="px-4 py-3 text-center bg-gray-100">Total Acum.</th>
+                                <th class="px-4 py-3 text-center text-gray-500">Prom/Mes</th>
+                                <th class="px-4 py-3 text-center text-teal-600">V+V</th>
+                                <th class="px-4 py-3 text-center text-purple-600">S-D</th>
+                                <th class="px-4 py-3 text-center text-orange-600">Fest</th>
+                            </tr>
+                        </thead>
+                        <tbody id="statsBody" class="divide-y divide-gray-100"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Schedule -->
+            <div id="scheduleResult" class="bg-white p-5 rounded-lg shadow-sm border border-gray-200 hidden">
+                <div id="alertBox" class="hidden mb-4 p-4 bg-red-50 text-red-700 text-sm font-medium rounded border border-red-200 flex items-start">
+                    <i class="fas fa-exclamation-triangle mt-0.5 mr-2"></i>
+                    <span id="alertText"></span>
+                </div>
+                <h3 class="font-bold text-gray-700 mb-2">Calendario del Periodo Actual</h3>
+                <div class="overflow-x-auto max-h-[500px] rounded border border-gray-200">
+                    <table class="w-full text-sm text-left">
+                        <thead class="bg-gray-50 text-xs uppercase text-gray-500 font-bold sticky top-0 z-10 shadow-sm">
+                            <tr>
+                                <th class="px-6 py-3 border-b bg-gray-50">Fecha</th>
+                                <th class="px-6 py-3 border-b bg-gray-50">Tipo</th>
+                                <th class="px-6 py-3 border-b bg-gray-50">Asignado</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scheduleBody" class="divide-y divide-gray-100 bg-white"></tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div id="emptyState" class="flex flex-col items-center justify-center h-64 text-gray-300 bg-white rounded-lg border-2 border-dashed border-gray-200">
+                <i class="fas fa-calendar-alt text-6xl mb-4 opacity-20"></i>
+                <p class="font-medium text-gray-400">Configura y calcula</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- Calendar Modal -->
+    <div id="calendarModal" class="fixed inset-0 bg-black bg-opacity-60 z-50 hidden flex items-center justify-center backdrop-blur-sm p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
+            <div class="bg-gray-50 p-4 border-b flex justify-between items-center">
+                <h3 id="modalTitle" class="font-bold text-gray-800">Calendario</h3>
+                <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="p-4">
+                <div class="flex justify-between items-center mb-4">
+                    <button onclick="changeMonth(-1)" class="p-1"><i class="fas fa-chevron-left"></i></button>
+                    <span id="monthLabel" class="font-bold text-gray-700 capitalize"></span>
+                    <button onclick="changeMonth(1)" class="p-1"><i class="fas fa-chevron-right"></i></button>
+                </div>
+                <div class="grid grid-cols-7 gap-1 text-center text-xs font-bold text-gray-400 mb-2">
+                    <div>L</div><div>M</div><div>X</div><div>J</div><div>V</div><div>S</div><div>D</div>
+                </div>
+                <div class="calendar-grid" id="calendarGrid"></div>
+            </div>
+            <div class="bg-gray-50 p-3 flex justify-end">
+                <button onclick="closeModal()" class="bg-gray-800 text-white px-5 py-2 rounded text-sm font-bold">Hecho</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- STATE ---
+        let appData = { 
+            startDate: '', endDate: '', holidays: [], people: [], schedule: [],
+            history: {} // { personId: { months: 0, total:0, holidays:0, ... } }
+        };
+        let viewDate = new Date();
+        let modalMode = 'block'; 
+        let currentPersonId = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadState();
+            if(!appData.startDate) {
+                const today = new Date();
+                const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+                const endMonth = new Date(today.getFullYear(), today.getMonth() + 2, 0);
+                const fmt = d => d.toISOString().split('T')[0];
+                appData.startDate = fmt(nextMonth);
+                appData.endDate = fmt(endMonth);
+                saveState();
+            }
+            document.getElementById('startDate').value = appData.startDate;
+            document.getElementById('endDate').value = appData.endDate;
+            renderPeople();
+            updateHistoryBadge();
+        });
+
+        function saveStateInputs() {
+            appData.startDate = document.getElementById('startDate').value;
+            appData.endDate = document.getElementById('endDate').value;
+            saveState();
+        }
+
+        function updateHistoryBadge() {
+            const count = Object.keys(appData.history || {}).length;
+            const badge = document.getElementById('historyBadge');
+            if(count > 0) {
+                badge.innerText = `Historial: ${count} personas`;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+
+        // --- HISTORY IMPORT LOGIC ---
+        function importHistory(el) {
+            const f = el.files[0];
+            if(!f) return;
+            const r = new FileReader();
+            r.onload = e => {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if(!data.resumen_personal) throw new Error("Formato incorrecto");
+                    
+                    if(!appData.history) appData.history = {};
+
+                    // Calculate months covered in this imported file
+                    const start = new Date(data.periodo.inicio);
+                    const end = new Date(data.periodo.fin);
+                    const monthsInFile = Math.max(1, (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) + 1);
+
+                    data.resumen_personal.forEach(p => {
+                        const pid = p.id_persona || p.nombre;
+                        if(!appData.history[pid]) {
+                            appData.history[pid] = { name: p.nombre, months: 0, total:0, hol:0, sd:0, fri:0 };
+                        }
+                        const h = appData.history[pid];
+                        h.months += monthsInFile; // Accumulate time
+                        // If it's the "Accumulated" file, statistics are totals.
+                        // We must be careful not to double count if user imports overlapping files.
+                        // Assuming user imports distinct months or one big accumulated file.
+                        // Ideally we would overwrite if we detect it is an accumulated file, but accumulation is safer for monthly files.
+                        h.total += p.estadisticas.total_guardias;
+                        h.hol += p.estadisticas.desglose.festivos;
+                        h.sd += p.estadisticas.desglose.fin_de_semana;
+                        h.fri += p.estadisticas.desglose.viernes_visperas;
+                    });
+                    
+                    saveState();
+                    updateHistoryBadge();
+                    renderPeople();
+                    Swal.fire('Historial Cargado', `Datos de ${data.resumen_personal.length} personas añadidos.`, 'success');
+                } catch(err) {
+                    Swal.fire('Error', 'Archivo no válido.', 'error');
+                }
+            };
+            r.readAsText(f);
+            el.value = '';
+        }
+
+        // --- PEOPLE ---
+        function addPerson() {
+            const name = document.getElementById('newPersonName').value.trim();
+            if (!name) return;
+            let existingId = null;
+            if(appData.history) {
+                const found = Object.keys(appData.history).find(k => appData.history[k].name === name);
+                if(found) existingId = found;
+            }
+
+            appData.people.push({
+                id: existingId || Date.now().toString(),
+                name,
+                min: document.getElementById('newPersonMin').value,
+                max: document.getElementById('newPersonMax').value,
+                doublets: document.getElementById('newPersonDoublets').checked,
+                blocked: []
+            });
+            document.getElementById('newPersonName').value = '';
+            saveState();
+            renderPeople();
+        }
+
+        function removePerson(id) {
+            appData.people = appData.people.filter(p => p.id !== id);
+            saveState();
+            renderPeople();
+        }
+
+        function renderPeople() {
+            const list = document.getElementById('peopleList');
+            list.innerHTML = '';
+            appData.people.forEach(p => {
+                const h = appData.history && appData.history[p.id];
+                const el = document.createElement('div');
+                el.className = "flex justify-between items-center bg-white p-3 rounded-lg border border-gray-200 hover:shadow-md transition";
+                
+                let infoHtml = '';
+                if(h) {
+                    infoHtml = `<span class="text-xs text-purple-600 font-bold bg-purple-50 px-1 rounded ml-2" title="Acumulado: ${h.total}">Hist: ${h.total}</span>`;
+                } else {
+                    infoHtml = `<span class="text-xs text-green-600 bg-green-50 px-1 rounded ml-2">Nuevo</span>`;
+                }
+
+                el.innerHTML = `
+                    <div class="flex flex-col">
+                        <span class="font-bold text-gray-800 text-sm flex items-center">${p.name} ${infoHtml}</span>
+                        <div class="flex gap-2 text-xs text-gray-500 mt-1">
+                            <span>${p.doublets ? 'Doble: Sí' : 'Doble: No'}</span>
+                            <span>${p.blocked.length ? 'Bloq: '+p.blocked.length : ''}</span>
+                        </div>
+                    </div>
+                    <div class="flex gap-1">
+                        <button onclick="openBlockModal('${p.id}')" class="p-2 text-gray-400 hover:text-orange-500 rounded"><i class="fas fa-calendar-times"></i></button>
+                        <button onclick="removePerson('${p.id}')" class="p-2 text-gray-400 hover:text-red-600 rounded"><i class="fas fa-trash"></i></button>
+                    </div>
+                `;
+                list.appendChild(el);
+            });
+        }
+
+        // --- CALENDAR ---
+        function openBlockModal(id) { modalMode = 'block'; currentPersonId = id; document.getElementById('modalTitle').innerText = 'Bloqueos'; openModal(); }
+        function openHolidayModal() { modalMode = 'holiday'; currentPersonId = null; document.getElementById('modalTitle').innerText = 'Festivos'; openModal(); }
+        function openModal() { document.getElementById('calendarModal').classList.remove('hidden'); document.getElementById('calendarModal').classList.add('flex'); if(appData.startDate) viewDate = new Date(appData.startDate); renderCalendar(); }
+        function closeModal() { document.getElementById('calendarModal').classList.add('hidden'); document.getElementById('calendarModal').classList.remove('flex'); saveState(); renderPeople(); }
+        function changeMonth(d) { viewDate.setMonth(viewDate.getMonth() + d); renderCalendar(); }
+
+        function renderCalendar() {
+            const grid = document.getElementById('calendarGrid');
+            const label = document.getElementById('monthLabel');
+            grid.innerHTML = '';
+            const y = viewDate.getFullYear(), m = viewDate.getMonth();
+            label.innerText = viewDate.toLocaleString('es-ES', { month: 'long', year: 'numeric' });
+            
+            const first = new Date(y, m, 1), last = new Date(y, m+1, 0);
+            let offset = first.getDay() - 1; if(offset===-1) offset=6;
+            
+            for(let i=0; i<offset; i++) grid.innerHTML += `<div></div>`;
+
+            let active = [];
+            if(modalMode === 'block') { const p = appData.people.find(x => x.id === currentPersonId); active = p ? p.blocked : []; }
+            else active = appData.holidays;
+
+            const min = new Date(appData.startDate); min.setHours(0,0,0,0);
+            const max = new Date(appData.endDate); max.setHours(0,0,0,0);
+
+            for(let d=1; d<=last.getDate(); d++) {
+                const cur = new Date(y, m, d); cur.setHours(0,0,0,0);
+                const iso = cur.toISOString().split('T')[0];
+                const div = document.createElement('div');
+                div.innerText = d;
+                
+                if(cur < min || cur > max) div.className = "calendar-day day-disabled";
+                else {
+                    const isOn = active.includes(iso);
+                    let cls = "day-standard bg-white border border-gray-100";
+                    if(isOn) cls = modalMode==='block' ? "day-blocked" : "day-holiday";
+                    else if(modalMode==='block' && appData.holidays.includes(iso)) cls = "bg-orange-50 text-orange-400";
+                    
+                    div.className = `calendar-day ${cls}`;
+                    div.onclick = () => {
+                        const idx = active.indexOf(iso);
+                        if(idx>-1) active.splice(idx,1); else active.push(iso);
+                        if(modalMode==='block') { const p=appData.people.find(x=>x.id===currentPersonId); if(p) p.blocked=active; }
+                        else appData.holidays=active;
+                        renderCalendar();
+                    };
+                }
+                grid.appendChild(div);
+            }
+        }
+
+        // --- ALGORITHM: GENTLE SLOPE ---
+        function startGeneration() {
+            if(!appData.people.length) return Swal.fire('Error', 'No hay personal activo', 'error');
+            saveStateInputs();
+            document.getElementById('loadingOverlay').classList.remove('hidden');
+            document.getElementById('loadingOverlay').classList.add('flex');
+
+            setTimeout(() => {
+                const dates = getDatesRange(appData.startDate, appData.endDate);
+                
+                const d1 = new Date(appData.startDate);
+                const d2 = new Date(appData.endDate);
+                const currentPeriodMonths = Math.max(1, (d2.getFullYear() - d1.getFullYear()) * 12 + (d2.getMonth() - d1.getMonth()) + 1);
+
+                let bestRes = null, minU = Infinity, bestStd = Infinity;
+
+                for(let i=0; i<150; i++) {
+                    const res = runSimulation(dates, currentPeriodMonths);
+                    if(res.unassigned < minU) { minU=res.unassigned; bestRes=res; bestStd=res.stdDev; }
+                    else if(res.unassigned === minU && res.stdDev < bestStd) { bestRes=res; bestStd=res.stdDev; }
+                }
+
+                appData.schedule = bestRes.schedule;
+                saveState();
+                document.getElementById('loadingOverlay').classList.add('hidden');
+                document.getElementById('loadingOverlay').classList.remove('flex');
+                renderResults(bestRes.unassigned);
+            }, 100);
+        }
+
+        function getDatesRange(s, e) {
+            const a=[]; let c=new Date(s); const end=new Date(e);
+            while(c<=end){ a.push(new Date(c)); c.setDate(c.getDate()+1); }
+            return a;
+        }
+
+        function getDayType(d, iso) {
+            if(appData.holidays.includes(iso)) return 'HOLIDAY';
+            const tmr = new Date(d); tmr.setDate(tmr.getDate()+1);
+            if(appData.holidays.includes(tmr.toISOString().split('T')[0])) return 'EVE';
+            const w=d.getDay();
+            if(w===0||w===6) return 'WEEKEND';
+            if(w===5) return 'FRIDAY';
+            return 'WEEKDAY';
+        }
+
+        function runSimulation(dates, currentPeriodMonths) {
+            let schedule = [];
+            let unassigned = 0;
+            
+            let stats = {};
+            appData.people.forEach(p => {
+                const h = (appData.history && appData.history[p.id]) || { months:0, total:0, hol:0, sd:0, fri:0 };
+                stats[p.id] = {
+                    id: p.id,
+                    histMonths: h.months || 0,
+                    histTotal: h.total || 0,
+                    histHol: h.hol || 0,
+                    histSD: h.sd || 0,
+                    histFri: h.fri || 0,
+                    curTotal: 0,
+                    curHol: 0,
+                    curSD: 0,
+                    curFri: 0,
+                    lastIndex: -99,
+                    lastWkdIndex: -99,
+                    totalMonths: (h.months || 0) + currentPeriodMonths
+                };
+            });
+
+            for(let i=0; i<dates.length; i++) {
+                const date = dates[i];
+                const iso = date.toISOString().split('T')[0];
+                const type = getDayType(date, iso);
+                const isFriEve = (type==='FRIDAY'||type==='EVE');
+
+                let pool = appData.people.filter(p => {
+                    const s = stats[p.id];
+                    if(p.blocked.includes(iso)) return false;
+                    if(p.max && s.curTotal >= parseInt(p.max)) return false;
+                    if((i - s.lastIndex) === 1) return false; 
+                    if(!p.doublets && (i - s.lastIndex) === 2) return false;
+                    return true;
+                });
+
+                if(!pool.length) { schedule.push({date:iso, pid:null, type}); unassigned++; continue; }
+
+                pool.forEach(p => {
+                    const s = stats[p.id];
+                    
+                    // --- SCORING: 2-Tier Strategy ---
+                    // 1. Current Month Load (Weight 10x): Ensure everyone gets work NOW.
+                    // 2. Historical Ratio (Weight 1x): Tie-breaker to favor those with less historical load.
+                    
+                    let score = 0;
+                    
+                    // Priority 1: Current Period Balance
+                    score += s.curTotal * 5000;
+                    
+                    // Priority 2: Historical Fairness (The gentle slope)
+                    // We check the Global Average per month
+                    const globalRatio = (s.histTotal + s.curTotal) / s.totalMonths;
+                    score += globalRatio * 500; 
+
+                    // Buckets follow same logic
+                    if(type === 'HOLIDAY') {
+                        score += s.curHol * 50000; // Priority: Don't give 2 holidays this month if possible
+                        score += ((s.histHol + s.curHol)/s.totalMonths) * 5000;
+                    } 
+                    else if(type === 'WEEKEND') {
+                        score += s.curSD * 10000;
+                        score += ((s.histSD + s.curSD)/s.totalMonths) * 1000;
+                        if((i - s.lastWkdIndex) < 6) score += 50000; // Penalize consecutive
+                    }
+
+                    if(p.min && s.curTotal < parseInt(p.min)) score -= 100000; // Force min compliance
+
+                    score += Math.random() * 200; // Noise for shuffling
+                    p.tempScore = score;
+                });
+
+                pool.sort((a,b) => a.tempScore - b.tempScore);
+                const winner = pool[0];
+                const ws = stats[winner.id];
+                
+                ws.curTotal++;
+                ws.lastIndex = i;
+                if(type==='HOLIDAY') ws.curHol++;
+                else if(type==='WEEKEND') { ws.curSD++; ws.lastWkdIndex=i; }
+                else if(isFriEve) ws.curFri++;
+
+                schedule.push({ date:iso, pid:winner.id, name:winner.name, type });
+            }
+
+            // Calc std dev of Current Period assignments to ensure fairness NOW
+            const currents = Object.values(stats).map(s => s.curTotal);
+            const mean = currents.reduce((a,b)=>a+b,0)/currents.length;
+            const variance = currents.reduce((a,b)=>a + Math.pow(b-mean,2), 0)/currents.length;
+
+            return { schedule, unassigned, stdDev: Math.sqrt(variance) };
+        }
+
+        // --- RENDER ---
+        function renderResults(unassigned) {
+            document.getElementById('statsPanel').classList.remove('hidden');
+            document.getElementById('scheduleResult').classList.remove('hidden');
+            document.getElementById('emptyState').classList.add('hidden');
+            
+            const alert = document.getElementById('alertBox');
+            if(unassigned > 0) { alert.classList.remove('hidden'); document.getElementById('alertText').innerText = `${unassigned} días sin cubrir.`; }
+            else alert.classList.add('hidden');
+
+            const tbody = document.getElementById('scheduleBody');
+            tbody.innerHTML = appData.schedule.map(s => {
+                const [y,m,d] = s.date.split('-');
+                let cls="text-gray-400", bg="";
+                if(s.type==='HOLIDAY') { cls="text-orange-700 font-bold"; bg="bg-orange-50"; }
+                else if(s.type==='WEEKEND') { cls="text-purple-700 font-bold"; bg="bg-purple-50"; }
+                else if(s.type==='EVE'||s.type==='FRIDAY') { cls="text-teal-600 font-bold"; }
+                return `<tr class="border-b ${bg}"><td class="px-6 py-3">${d}/${m}</td><td class="px-6 py-3 ${cls}">${s.type}</td><td class="px-6 py-3 font-bold ${s.pid?'':'text-red-500'}">${s.name||'VACÍO'}</td></tr>`;
+            }).join('');
+
+            // Render stats merging Active + Leavers
+            const allIds = new Set(appData.people.map(p=>p.id));
+            if(appData.history) Object.keys(appData.history).forEach(k => allIds.add(k));
+
+            const statsList = [];
+            const d1=new Date(appData.startDate), d2=new Date(appData.endDate);
+            const curMonths = Math.max(1, (d2.getFullYear()-d1.getFullYear())*12 + (d2.getMonth()-d1.getMonth())+1);
+
+            allIds.forEach(id => {
+                const activeP = appData.people.find(p => p.id === id);
+                const h = (appData.history && appData.history[id]) || { total:0, hol:0, sd:0, fri:0, months:0, name: activeP ? activeP.name : 'Unknown' };
+                
+                let cur = { total:0, hol:0, sd:0, fri:0 };
+                appData.schedule.filter(s => s.pid === id).forEach(s => {
+                    cur.total++;
+                    if(s.type==='HOLIDAY') cur.hol++;
+                    else if(s.type==='WEEKEND') cur.sd++;
+                    else if(s.type==='FRIDAY'||s.type==='EVE') cur.fri++;
+                });
+
+                const name = activeP ? activeP.name : `${h.name} (Inactivo)`;
+                const totalMonths = (activeP ? curMonths : 0) + (h.months || 0);
+                const safeMonths = totalMonths === 0 ? 1 : totalMonths;
+                const grandTotal = h.total + cur.total;
+
+                statsList.push({
+                    name,
+                    curTotal: cur.total,
+                    grandTotal,
+                    ratio: (grandTotal / safeMonths).toFixed(1),
+                    fri: h.fri + cur.fri,
+                    sd: h.sd + cur.sd,
+                    hol: h.hol + cur.hol,
+                    isLeaver: !activeP
+                });
+            });
+
+            document.getElementById('statsBody').innerHTML = statsList.map(s => `
+                <tr class="border-b ${s.isLeaver ? 'bg-gray-100 text-gray-500 italic' : ''}">
+                    <td class="px-4 py-3 font-medium">${s.name}</td>
+                    <td class="px-4 py-3 text-center text-blue-800 font-bold bg-blue-50">${s.curTotal}</td>
+                    <td class="px-4 py-3 text-center font-bold bg-gray-100">${s.grandTotal}</td>
+                    <td class="px-4 py-3 text-center text-gray-500 font-mono">${s.ratio}</td>
+                    <td class="px-4 py-3 text-center text-teal-600">${s.fri}</td>
+                    <td class="px-4 py-3 text-center text-purple-600">${s.sd}</td>
+                    <td class="px-4 py-3 text-center text-orange-600 font-bold">${s.hol}</td>
+                </tr>
+            `).join('');
+        }
+
+        // --- ACCOUNTING EXPORT (Cumulative) ---
+        function downloadReportJSON() {
+            let report = {
+                periodo: { inicio: appData.startDate, fin: appData.endDate },
+                generado: new Date().toISOString(),
+                resumen_personal: []
+            };
+
+            const allIds = new Set(appData.people.map(p=>p.id));
+            if(appData.history) Object.keys(appData.history).forEach(k => allIds.add(k));
+
+            allIds.forEach(id => {
+                const activeP = appData.people.find(p => p.id === id);
+                const h = (appData.history && appData.history[id]) || { total:0, hol:0, sd:0, fri:0, months:0, name: activeP ? activeP.name : 'Unknown' };
+                
+                const assignments = appData.schedule.filter(s => s.pid === id).map(s => ({ fecha: s.date, tipo: s.type }));
+                const curStats = { total:0, hol:0, sd:0, fri:0 };
+                assignments.forEach(s => {
+                    curStats.total++;
+                    if(s.tipo === 'HOLIDAY') curStats.hol++;
+                    else if(s.tipo === 'WEEKEND') curStats.sd++;
+                    else if(s.tipo === 'FRIDAY' || s.tipo === 'EVE') curStats.fri++;
+                });
+
+                report.resumen_personal.push({
+                    id_persona: id,
+                    nombre: activeP ? activeP.name : h.name,
+                    estadisticas: {
+                        total_guardias: h.total + curStats.total,
+                        desglose: {
+                            festivos: h.hol + curStats.hol,
+                            fin_de_semana: h.sd + curStats.sd,
+                            viernes_visperas: h.fri + curStats.fri,
+                            diario_LJ: 0
+                        }
+                    }
+                });
+            });
+
+            const blob = new Blob([JSON.stringify(report, null, 4)], {type: 'application/json'});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `contabilidad_acumulada_${appData.endDate}.json`;
+            a.click();
+        }
+
+        // --- PDF ---
+        function downloadPDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            doc.text("Contabilidad de Guardias", 14, 20);
+            doc.setFontSize(10);
+            doc.text(`Periodo Actual: ${appData.startDate} a ${appData.endDate}`, 14, 26);
+            
+            const rows = [];
+            // Reuse logic from renderResults essentially
+            const allIds = new Set(appData.people.map(p=>p.id));
+            if(appData.history) Object.keys(appData.history).forEach(k => allIds.add(k));
+            const d1=new Date(appData.startDate), d2=new Date(appData.endDate);
+            const curMonths = Math.max(1, (d2.getFullYear()-d1.getFullYear())*12 + (d2.getMonth()-d1.getMonth())+1);
+
+            allIds.forEach(id => {
+                const activeP = appData.people.find(p => p.id === id);
+                const h = (appData.history && appData.history[id]) || { total:0, hol:0, sd:0, fri:0, months:0, name: activeP ? activeP.name : 'Unknown' };
+                let c = { t:0, h:0, s:0, f:0 };
+                appData.schedule.filter(s=>s.pid===id).forEach(s=>{
+                    c.t++; 
+                    if(s.type==='HOLIDAY') c.h++; 
+                    else if(s.type==='WEEKEND') c.s++;
+                    else if(s.type==='FRIDAY'||s.type==='EVE') c.f++;
+                });
+                
+                const tot = h.total + c.t;
+                const m = (activeP ? curMonths : 0) + (h.months || 0);
+                const rat = (tot / (m||1)).toFixed(1);
+                
+                rows.push([
+                    activeP ? activeP.name : `${h.name} (Baja)`,
+                    c.t, // Este mes
+                    tot, // Total
+                    rat,
+                    h.fri + c.f,
+                    h.sd + c.s,
+                    h.hol + c.h
+                ]);
+            });
+
+            doc.autoTable({
+                startY: 35,
+                head: [['Nombre', 'Este Mes', 'Total Acum', 'Prom/Mes', 'V+V', 'S-D', 'Fest']],
+                body: rows,
+                theme: 'striped'
+            });
+
+            doc.save('informe_contable.pdf');
+        }
+
+        function saveState() { localStorage.setItem('guardias', JSON.stringify(appData)); }
+        function loadState() { const d = localStorage.getItem('guardias'); if(d) appData = { ...appData, ...JSON.parse(d) }; }
+        function resetData() { if(confirm('Borrar todo?')) { localStorage.removeItem('guardias'); location.reload(); } }
+        function exportData() { 
+            const blob = new Blob([JSON.stringify(appData)], {type: 'application/json'});
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'copia_seguridad.json'; a.click();
+        }
+        function triggerImport() { document.getElementById('fileInput').click(); }
+        function importData(el) {
+            const f = el.files[0]; if(!f) return;
+            const r = new FileReader();
+            r.onload = e => { appData = JSON.parse(e.target.result); saveState(); location.reload(); };
+            r.readAsText(f);
+        }
+        function checkCookies() { if(!localStorage.getItem('cookiesAccepted')) document.getElementById('cookieBanner').classList.remove('hidden'); }
+        function acceptCookies() { localStorage.setItem('cookiesAccepted', 'true'); document.getElementById('cookieBanner').classList.add('hidden'); }
+    </script>
+</body>
+</html>
+
+
