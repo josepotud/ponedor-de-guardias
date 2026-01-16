@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestor de Guardias - Balanceo Progresivo</title>
+    <title>Gestor de Guardias Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -15,11 +15,18 @@
         body { font-family: 'Inter', sans-serif; }
         
         .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
-        .calendar-day { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border-radius: 4px; font-size: 0.8rem; user-select: none; cursor: pointer; transition: all 0.1s; }
+        .calendar-day { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border-radius: 4px; font-size: 0.8rem; user-select: none; cursor: pointer; transition: all 0.1s; position: relative; }
         
         .day-standard:hover { background-color: #DBEAFE; transform: scale(1.05); }
-        .day-blocked { background-color: #EF4444; color: white; }
+        
+        /* States */
+        .day-blocked { background-color: #EF4444; color: white; } /* Red */
+        .day-suggested { background-color: #10B981; color: white; } /* Green */
+        
         .day-holiday { background-color: #F59E0B; color: white; font-weight: bold; border: 2px solid #D97706; }
+        .day-double-staff { background-color: #1E3A8A; color: white; font-weight: bold; } /* Blue for 2 staff */
+        .day-double-staff::after { content: 'x2'; font-size: 0.6em; position: absolute; bottom: 2px; right: 2px; opacity: 0.8; }
+        
         .day-disabled { background-color: #F3F4F6; color: #D1D5DB; cursor: not-allowed; }
         
         .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
@@ -35,30 +42,30 @@
     <!-- Loading -->
     <div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-60 z-[60] hidden flex-col items-center justify-center text-white backdrop-blur-sm">
         <div class="loader mb-4"></div>
-        <p class="font-bold text-lg">Calculando Distribución...</p>
-        <p class="text-sm opacity-80">Priorizando mes actual + compensación suave</p>
+        <p class="font-bold text-lg">Asignando Guardias...</p>
+        <p class="text-sm opacity-80">Respetando sugerencias y plazas dobles</p>
     </div>
 
     <!-- Header -->
     <header class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40">
         <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
             <h1 class="text-lg md:text-xl font-bold text-gray-800 flex items-center">
-                <i class="fas fa-balance-scale-right mr-2 text-blue-600"></i>
-                <span class="hidden md:inline">Gestor Contable</span>
-                <span class="md:hidden">Gestor</span>
+                <i class="fas fa-user-shield mr-2 text-blue-600"></i>
+                <span class="hidden md:inline">Gestor de Guardias Pro</span>
+                <span class="md:hidden">Guardias</span>
             </h1>
             <div class="flex gap-2">
                 <button onclick="document.getElementById('historyInput').click()" class="bg-purple-100 hover:bg-purple-200 text-purple-700 px-3 py-2 rounded border border-purple-300 transition text-sm font-bold flex items-center" title="Cargar JSON de meses anteriores">
-                    <i class="fas fa-upload mr-2"></i> Cargar Histórico
+                    <i class="fas fa-upload mr-2"></i> Histórico
                 </button>
                 <input type="file" id="historyInput" class="hidden" accept=".json" onchange="importHistory(this)">
                 
                 <div class="h-8 w-px bg-gray-300 mx-1"></div>
 
-                <button onclick="exportData()" class="text-gray-600 hover:bg-gray-100 p-2 rounded" title="Copia Seguridad App"><i class="fas fa-save"></i></button>
-                <button onclick="triggerImport()" class="text-gray-600 hover:bg-gray-100 p-2 rounded" title="Restaurar App"><i class="fas fa-folder-open"></i></button>
+                <button onclick="exportData()" class="text-gray-600 hover:bg-gray-100 p-2 rounded" title="Guardar"><i class="fas fa-save"></i></button>
+                <button onclick="triggerImport()" class="text-gray-600 hover:bg-gray-100 p-2 rounded" title="Cargar"><i class="fas fa-folder-open"></i></button>
                 <input type="file" id="fileInput" class="hidden" accept=".json" onchange="importData(this)">
-                <button onclick="resetData()" class="text-red-500 hover:bg-red-50 p-2 rounded" title="Borrar todo"><i class="fas fa-trash-alt"></i></button>
+                <button onclick="resetData()" class="text-red-500 hover:bg-red-50 p-2 rounded" title="Reset"><i class="fas fa-trash-alt"></i></button>
             </div>
         </div>
     </header>
@@ -68,15 +75,12 @@
         <!-- Config -->
         <div class="lg:col-span-1 space-y-6">
             
-            <!-- Dates -->
+            <!-- Dates & Config -->
             <div class="bg-white p-5 rounded-lg shadow-sm border border-gray-200">
                 <h2 class="font-bold text-gray-700 mb-4 border-b pb-2 flex items-center justify-between">
-                    <span>1. Periodo Actual</span>
-                    <button onclick="openHolidayModal()" class="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded hover:bg-orange-200 transition">
-                        <i class="fas fa-star mr-1"></i>Festivos
-                    </button>
+                    <span>1. Configuración</span>
                 </h2>
-                <div class="grid grid-cols-2 gap-3">
+                <div class="grid grid-cols-2 gap-3 mb-4">
                     <div>
                         <label class="text-xs font-bold text-gray-500">INICIO</label>
                         <input type="date" id="startDate" class="border p-2 rounded text-sm w-full outline-none focus:ring-2 focus:ring-blue-200" onchange="saveStateInputs()">
@@ -86,13 +90,21 @@
                         <input type="date" id="endDate" class="border p-2 rounded text-sm w-full outline-none focus:ring-2 focus:ring-blue-200" onchange="saveStateInputs()">
                     </div>
                 </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <button onclick="openHolidayModal()" class="text-xs bg-orange-100 text-orange-700 px-2 py-2 rounded hover:bg-orange-200 transition flex justify-center items-center font-bold">
+                        <i class="fas fa-umbrella-beach mr-1"></i> Festivos
+                    </button>
+                    <button onclick="openStaffingModal()" class="text-xs bg-blue-100 text-blue-700 px-2 py-2 rounded hover:bg-blue-200 transition flex justify-center items-center font-bold">
+                        <i class="fas fa-users mr-1"></i> Plazas/Día (1/2)
+                    </button>
+                </div>
             </div>
 
             <!-- People -->
             <div class="bg-white p-5 rounded-lg shadow-sm border border-gray-200">
                 <div class="flex justify-between items-center mb-4 border-b pb-2">
-                    <h2 class="font-bold text-gray-700">2. Personal Activo</h2>
-                    <span id="historyBadge" class="hidden text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded font-bold">Historial Cargado</span>
+                    <h2 class="font-bold text-gray-700">2. Personal</h2>
+                    <span id="historyBadge" class="hidden text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded font-bold">Historial OK</span>
                 </div>
                 
                 <div class="space-y-3 mb-4 bg-gray-50 p-3 rounded-md border border-gray-100">
@@ -107,7 +119,7 @@
                             <span class="ml-2 text-xs text-gray-600 font-medium">Acepta Dobletes</span>
                         </label>
                         <button onclick="addPerson()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded text-xs font-bold uppercase tracking-wide transition shadow-sm">
-                            Añadir <i class="fas fa-plus ml-1"></i>
+                            Añadir
                         </button>
                     </div>
                 </div>
@@ -115,7 +127,7 @@
             </div>
 
             <button onclick="startGeneration()" class="w-full bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 text-white font-bold py-4 rounded-lg shadow-lg transform transition active:scale-95 flex flex-col items-center justify-center">
-                <span class="text-lg"><i class="fas fa-calculator mr-2"></i>Calcular Periodo</span>
+                <span class="text-lg"><i class="fas fa-calculator mr-2"></i>Calcular</span>
             </button>
         </div>
 
@@ -126,12 +138,12 @@
             <div id="statsPanel" class="bg-white p-5 rounded-lg shadow-sm border border-gray-200 hidden">
                 <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
                     <div>
-                        <h2 class="font-bold text-gray-700 text-lg">Contabilidad Global</h2>
-                        <p class="text-xs text-gray-400">Balance: Mes Actual (Alta Prioridad) + Histórico (Baja Prioridad)</p>
+                        <h2 class="font-bold text-gray-700 text-lg">Resultados</h2>
+                        <p class="text-xs text-gray-400">Total Acumulado = Histórico + Este Mes</p>
                     </div>
                     <div class="flex gap-2">
-                         <button onclick="downloadReportJSON()" class="bg-purple-600 hover:bg-purple-700 text-white text-xs px-4 py-2 rounded font-bold transition shadow-sm flex items-center" title="Descargar datos contables acumulados">
-                            <i class="fas fa-file-invoice-dollar mr-2"></i> Guardar Contabilidad (JSON)
+                         <button onclick="downloadReportJSON()" class="bg-gray-800 hover:bg-gray-900 text-white text-xs px-4 py-2 rounded font-bold transition shadow-sm flex items-center">
+                            <i class="fas fa-file-invoice-dollar mr-2"></i> JSON
                         </button>
                         <button onclick="downloadPDF()" class="bg-red-600 hover:bg-red-700 text-white text-xs px-4 py-2 rounded font-bold transition shadow-sm flex items-center">
                             <i class="fas fa-file-pdf mr-2"></i> PDF
@@ -143,9 +155,8 @@
                         <thead class="bg-gray-50 text-xs uppercase text-gray-600 font-bold border-b">
                             <tr>
                                 <th class="px-4 py-3">Nombre</th>
-                                <th class="px-4 py-3 text-center bg-blue-50 text-blue-800">Este Mes</th>
-                                <th class="px-4 py-3 text-center bg-gray-100">Total Acum.</th>
-                                <th class="px-4 py-3 text-center text-gray-500">Prom/Mes</th>
+                                <th class="px-4 py-3 text-center bg-blue-50 text-blue-800">Mes</th>
+                                <th class="px-4 py-3 text-center bg-gray-100">Total</th>
                                 <th class="px-4 py-3 text-center text-teal-600">V+V</th>
                                 <th class="px-4 py-3 text-center text-purple-600">S-D</th>
                                 <th class="px-4 py-3 text-center text-orange-600">Fest</th>
@@ -162,8 +173,8 @@
                     <i class="fas fa-exclamation-triangle mt-0.5 mr-2"></i>
                     <span id="alertText"></span>
                 </div>
-                <h3 class="font-bold text-gray-700 mb-2">Calendario del Periodo Actual</h3>
-                <div class="overflow-x-auto max-h-[500px] rounded border border-gray-200">
+                <h3 class="font-bold text-gray-700 mb-2">Calendario</h3>
+                <div class="overflow-x-auto max-h-[600px] rounded border border-gray-200">
                     <table class="w-full text-sm text-left">
                         <thead class="bg-gray-50 text-xs uppercase text-gray-500 font-bold sticky top-0 z-10 shadow-sm">
                             <tr>
@@ -184,18 +195,31 @@
         </div>
     </main>
 
-    <!-- Calendar Modal -->
+    <!-- Generic Calendar Modal -->
     <div id="calendarModal" class="fixed inset-0 bg-black bg-opacity-60 z-50 hidden flex items-center justify-center backdrop-blur-sm p-4">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
             <div class="bg-gray-50 p-4 border-b flex justify-between items-center">
                 <h3 id="modalTitle" class="font-bold text-gray-800">Calendario</h3>
                 <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
             </div>
+            
+            <!-- Controls for Person Modal (Block/Suggest) -->
+            <div id="personModalControls" class="flex justify-center p-2 gap-4 hidden bg-white border-b border-gray-100">
+                <label class="flex items-center text-xs font-bold cursor-pointer">
+                    <input type="radio" name="dayAction" value="block" checked class="text-red-500 mr-1 focus:ring-red-500" onchange="renderCalendar()"> 
+                    <span class="text-red-500">Bloquear (Rojo)</span>
+                </label>
+                <label class="flex items-center text-xs font-bold cursor-pointer">
+                    <input type="radio" name="dayAction" value="suggest" class="text-green-500 mr-1 focus:ring-green-500" onchange="renderCalendar()"> 
+                    <span class="text-green-500">Sugerir (Verde)</span>
+                </label>
+            </div>
+
             <div class="p-4">
                 <div class="flex justify-between items-center mb-4">
-                    <button onclick="changeMonth(-1)" class="p-1"><i class="fas fa-chevron-left"></i></button>
+                    <button onclick="changeMonth(-1)" class="p-1 text-gray-600"><i class="fas fa-chevron-left"></i></button>
                     <span id="monthLabel" class="font-bold text-gray-700 capitalize"></span>
-                    <button onclick="changeMonth(1)" class="p-1"><i class="fas fa-chevron-right"></i></button>
+                    <button onclick="changeMonth(1)" class="p-1 text-gray-600"><i class="fas fa-chevron-right"></i></button>
                 </div>
                 <div class="grid grid-cols-7 gap-1 text-center text-xs font-bold text-gray-400 mb-2">
                     <div>L</div><div>M</div><div>X</div><div>J</div><div>V</div><div>S</div><div>D</div>
@@ -211,11 +235,15 @@
     <script>
         // --- STATE ---
         let appData = { 
-            startDate: '', endDate: '', holidays: [], people: [], schedule: [],
-            history: {} // { personId: { months: 0, total:0, holidays:0, ... } }
+            startDate: '', endDate: '', 
+            holidays: [], 
+            staffing: {}, // { '2023-01-01': 2 } default is 1
+            people: [], 
+            schedule: [],
+            history: {} 
         };
         let viewDate = new Date();
-        let modalMode = 'block'; 
+        let modalMode = 'block'; // 'block' (person), 'holiday', 'staffing'
         let currentPersonId = null;
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -244,58 +272,50 @@
         function updateHistoryBadge() {
             const count = Object.keys(appData.history || {}).length;
             const badge = document.getElementById('historyBadge');
-            if(count > 0) {
-                badge.innerText = `Historial: ${count} personas`;
-                badge.classList.remove('hidden');
-            } else {
-                badge.classList.add('hidden');
-            }
+            if(count > 0) { badge.classList.remove('hidden'); } else { badge.classList.add('hidden'); }
         }
 
-        // --- HISTORY IMPORT LOGIC ---
+        // --- IMPORT HISTORY ---
         function importHistory(el) {
-            const f = el.files[0];
-            if(!f) return;
+            const f = el.files[0]; if(!f) return;
             const r = new FileReader();
             r.onload = e => {
                 try {
                     const data = JSON.parse(e.target.result);
-                    if(!data.resumen_personal) throw new Error("Formato incorrecto");
-                    
+                    if(!data.resumen_personal) throw new Error();
                     if(!appData.history) appData.history = {};
-
-                    // Calculate months covered in this imported file
-                    const start = new Date(data.periodo.inicio);
-                    const end = new Date(data.periodo.fin);
-                    const monthsInFile = Math.max(1, (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) + 1);
-
+                    
+                    // Simple accumulation of totals
                     data.resumen_personal.forEach(p => {
                         const pid = p.id_persona || p.nombre;
-                        if(!appData.history[pid]) {
-                            appData.history[pid] = { name: p.nombre, months: 0, total:0, hol:0, sd:0, fri:0 };
-                        }
+                        if(!appData.history[pid]) appData.history[pid] = { name: p.nombre, months:0, total:0, hol:0, sd:0, fri:0 };
                         const h = appData.history[pid];
-                        h.months += monthsInFile; // Accumulate time
-                        // If it's the "Accumulated" file, statistics are totals.
-                        // We must be careful not to double count if user imports overlapping files.
-                        // Assuming user imports distinct months or one big accumulated file.
-                        // Ideally we would overwrite if we detect it is an accumulated file, but accumulation is safer for monthly files.
-                        h.total += p.estadisticas.total_guardias;
-                        h.hol += p.estadisticas.desglose.festivos;
-                        h.sd += p.estadisticas.desglose.fin_de_semana;
-                        h.fri += p.estadisticas.desglose.viernes_visperas;
+                        
+                        // We assume importing "totals" means we add them. 
+                        // If users re-import same file, it doubles. Logic assumes disciplined import.
+                        // Ideally we could track 'lastImportId' but simple sum is safer for varied use cases.
+                        // To be safer, we can try to guess months from filename or data, but simpler is raw sum.
+                        
+                        // NOTE: In previous step we exported "Accumulated Total".
+                        // So if we import that, we should REPLACE current history, not add.
+                        // Let's assume REPLACE logic for history if ID matches.
+                        h.total = p.estadisticas.total_guardias;
+                        h.hol = p.estadisticas.desglose.festivos;
+                        h.sd = p.estadisticas.desglose.fin_de_semana;
+                        h.fri = p.estadisticas.desglose.viernes_visperas;
+                        // For months, we approximate 1 month per import if not tracked.
+                        // Let's increment months by 1 just to keep average divisor growing.
+                        h.months++; 
                     });
                     
                     saveState();
                     updateHistoryBadge();
                     renderPeople();
-                    Swal.fire('Historial Cargado', `Datos de ${data.resumen_personal.length} personas añadidos.`, 'success');
-                } catch(err) {
-                    Swal.fire('Error', 'Archivo no válido.', 'error');
-                }
+                    Swal.fire('OK', 'Historial actualizado.', 'success');
+                } catch(err) { Swal.fire('Error', 'Archivo inválido', 'error'); }
             };
             r.readAsText(f);
-            el.value = '';
+            el.value='';
         }
 
         // --- PEOPLE ---
@@ -307,14 +327,14 @@
                 const found = Object.keys(appData.history).find(k => appData.history[k].name === name);
                 if(found) existingId = found;
             }
-
             appData.people.push({
                 id: existingId || Date.now().toString(),
                 name,
                 min: document.getElementById('newPersonMin').value,
                 max: document.getElementById('newPersonMax').value,
                 doublets: document.getElementById('newPersonDoublets').checked,
-                blocked: []
+                blocked: [],
+                suggested: [] // New: Mandatory days
             });
             document.getElementById('newPersonName').value = '';
             saveState();
@@ -335,23 +355,23 @@
                 const el = document.createElement('div');
                 el.className = "flex justify-between items-center bg-white p-3 rounded-lg border border-gray-200 hover:shadow-md transition";
                 
-                let infoHtml = '';
-                if(h) {
-                    infoHtml = `<span class="text-xs text-purple-600 font-bold bg-purple-50 px-1 rounded ml-2" title="Acumulado: ${h.total}">Hist: ${h.total}</span>`;
-                } else {
-                    infoHtml = `<span class="text-xs text-green-600 bg-green-50 px-1 rounded ml-2">Nuevo</span>`;
-                }
+                let infoHtml = h ? `<span class="text-xs text-purple-600 font-bold bg-purple-50 px-1 rounded ml-2">Hist:${h.total}</span>` : `<span class="text-xs text-green-600 bg-green-50 px-1 rounded ml-2">Nuevo</span>`;
+                
+                // Counters for visual feedback
+                const blockedC = p.blocked.length;
+                const suggestC = p.suggested ? p.suggested.length : 0;
 
                 el.innerHTML = `
                     <div class="flex flex-col">
                         <span class="font-bold text-gray-800 text-sm flex items-center">${p.name} ${infoHtml}</span>
                         <div class="flex gap-2 text-xs text-gray-500 mt-1">
-                            <span>${p.doublets ? 'Doble: Sí' : 'Doble: No'}</span>
-                            <span>${p.blocked.length ? 'Bloq: '+p.blocked.length : ''}</span>
+                            ${p.doublets?'Doble:Sí':'Doble:No'} 
+                            ${blockedC > 0 ? `<span class="text-red-500">Bloq:${blockedC}</span>` : ''}
+                            ${suggestC > 0 ? `<span class="text-green-600 font-bold">Sug:${suggestC}</span>` : ''}
                         </div>
                     </div>
                     <div class="flex gap-1">
-                        <button onclick="openBlockModal('${p.id}')" class="p-2 text-gray-400 hover:text-orange-500 rounded"><i class="fas fa-calendar-times"></i></button>
+                        <button onclick="openPersonModal('${p.id}')" class="p-2 text-gray-400 hover:text-blue-500 rounded" title="Calendario Personal"><i class="fas fa-calendar-day"></i></button>
                         <button onclick="removePerson('${p.id}')" class="p-2 text-gray-400 hover:text-red-600 rounded"><i class="fas fa-trash"></i></button>
                     </div>
                 `;
@@ -359,11 +379,41 @@
             });
         }
 
-        // --- CALENDAR ---
-        function openBlockModal(id) { modalMode = 'block'; currentPersonId = id; document.getElementById('modalTitle').innerText = 'Bloqueos'; openModal(); }
-        function openHolidayModal() { modalMode = 'holiday'; currentPersonId = null; document.getElementById('modalTitle').innerText = 'Festivos'; openModal(); }
-        function openModal() { document.getElementById('calendarModal').classList.remove('hidden'); document.getElementById('calendarModal').classList.add('flex'); if(appData.startDate) viewDate = new Date(appData.startDate); renderCalendar(); }
-        function closeModal() { document.getElementById('calendarModal').classList.add('hidden'); document.getElementById('calendarModal').classList.remove('flex'); saveState(); renderPeople(); }
+        // --- CALENDAR LOGIC ---
+        function openPersonModal(id) {
+            modalMode = 'person';
+            currentPersonId = id;
+            const p = appData.people.find(x => x.id === id);
+            document.getElementById('modalTitle').innerText = p.name;
+            document.getElementById('personModalControls').classList.remove('hidden');
+            openModal();
+        }
+        function openHolidayModal() {
+            modalMode = 'holiday';
+            currentPersonId = null;
+            document.getElementById('modalTitle').innerText = 'Festivos';
+            document.getElementById('personModalControls').classList.add('hidden');
+            openModal();
+        }
+        function openStaffingModal() {
+            modalMode = 'staffing';
+            currentPersonId = null;
+            document.getElementById('modalTitle').innerText = 'Plazas por Día';
+            document.getElementById('personModalControls').classList.add('hidden');
+            openModal();
+        }
+        function openModal() {
+            document.getElementById('calendarModal').classList.remove('hidden');
+            document.getElementById('calendarModal').classList.add('flex');
+            if(appData.startDate) viewDate = new Date(appData.startDate);
+            renderCalendar();
+        }
+        function closeModal() {
+            document.getElementById('calendarModal').classList.add('hidden');
+            document.getElementById('calendarModal').classList.remove('flex');
+            saveState();
+            renderPeople();
+        }
         function changeMonth(d) { viewDate.setMonth(viewDate.getMonth() + d); renderCalendar(); }
 
         function renderCalendar() {
@@ -378,9 +428,15 @@
             
             for(let i=0; i<offset; i++) grid.innerHTML += `<div></div>`;
 
-            let active = [];
-            if(modalMode === 'block') { const p = appData.people.find(x => x.id === currentPersonId); active = p ? p.blocked : []; }
-            else active = appData.holidays;
+            // Setup active arrays based on mode
+            let blockedArr = [], suggestedArr = [], holidaysArr = appData.holidays;
+            if (modalMode === 'person') {
+                const p = appData.people.find(x => x.id === currentPersonId);
+                if (p) {
+                    blockedArr = p.blocked || [];
+                    suggestedArr = p.suggested || [];
+                }
+            }
 
             const min = new Date(appData.startDate); min.setHours(0,0,0,0);
             const max = new Date(appData.endDate); max.setHours(0,0,0,0);
@@ -391,19 +447,67 @@
                 const div = document.createElement('div');
                 div.innerText = d;
                 
-                if(cur < min || cur > max) div.className = "calendar-day day-disabled";
-                else {
-                    const isOn = active.includes(iso);
+                if(cur < min || cur > max) {
+                    div.className = "calendar-day day-disabled";
+                } else {
                     let cls = "day-standard bg-white border border-gray-100";
-                    if(isOn) cls = modalMode==='block' ? "day-blocked" : "day-holiday";
-                    else if(modalMode==='block' && appData.holidays.includes(iso)) cls = "bg-orange-50 text-orange-400";
                     
+                    if (modalMode === 'person') {
+                        // Check Blocked
+                        if (blockedArr.includes(iso)) cls = "day-blocked";
+                        // Check Suggested (overrides block visually if conflict, though user shouldn't do both)
+                        else if (suggestedArr.includes(iso)) cls = "day-suggested";
+                        // Show Holidays as hint
+                        else if (holidaysArr.includes(iso)) cls = "bg-orange-50 text-orange-400";
+                    } 
+                    else if (modalMode === 'holiday') {
+                        if (holidaysArr.includes(iso)) cls = "day-holiday";
+                    }
+                    else if (modalMode === 'staffing') {
+                        const count = appData.staffing[iso] || 1;
+                        if (count === 2) cls = "day-double-staff";
+                    }
+
                     div.className = `calendar-day ${cls}`;
+                    
                     div.onclick = () => {
-                        const idx = active.indexOf(iso);
-                        if(idx>-1) active.splice(idx,1); else active.push(iso);
-                        if(modalMode==='block') { const p=appData.people.find(x=>x.id===currentPersonId); if(p) p.blocked=active; }
-                        else appData.holidays=active;
+                        if (modalMode === 'holiday') {
+                            const idx = holidaysArr.indexOf(iso);
+                            if(idx>-1) holidaysArr.splice(idx,1); else holidaysArr.push(iso);
+                            appData.holidays = holidaysArr;
+                        } 
+                        else if (modalMode === 'staffing') {
+                            const current = appData.staffing[iso] || 1;
+                            appData.staffing[iso] = (current === 1) ? 2 : 1;
+                        }
+                        else if (modalMode === 'person') {
+                            const p = appData.people.find(x => x.id === currentPersonId);
+                            // Determine action based on radio
+                            const action = document.querySelector('input[name="dayAction"]:checked').value;
+                            
+                            if (action === 'block') {
+                                // Toggle Block
+                                const idxB = p.blocked.indexOf(iso);
+                                if(idxB>-1) p.blocked.splice(idxB,1);
+                                else {
+                                    p.blocked.push(iso);
+                                    // Remove from suggested if exists
+                                    const idxS = p.suggested ? p.suggested.indexOf(iso) : -1;
+                                    if(idxS>-1) p.suggested.splice(idxS,1);
+                                }
+                            } else {
+                                // Toggle Suggest
+                                if(!p.suggested) p.suggested = [];
+                                const idxS = p.suggested.indexOf(iso);
+                                if(idxS>-1) p.suggested.splice(idxS,1);
+                                else {
+                                    p.suggested.push(iso);
+                                    // Remove from blocked if exists
+                                    const idxB = p.blocked.indexOf(iso);
+                                    if(idxB>-1) p.blocked.splice(idxB,1);
+                                }
+                            }
+                        }
                         renderCalendar();
                     };
                 }
@@ -411,9 +515,9 @@
             }
         }
 
-        // --- ALGORITHM: GENTLE SLOPE ---
+        // --- ALGORITHM ---
         function startGeneration() {
-            if(!appData.people.length) return Swal.fire('Error', 'No hay personal activo', 'error');
+            if(!appData.people.length) return Swal.fire('Error', 'Sin personal', 'error');
             saveStateInputs();
             document.getElementById('loadingOverlay').classList.remove('hidden');
             document.getElementById('loadingOverlay').classList.add('flex');
@@ -421,14 +525,14 @@
             setTimeout(() => {
                 const dates = getDatesRange(appData.startDate, appData.endDate);
                 
-                const d1 = new Date(appData.startDate);
-                const d2 = new Date(appData.endDate);
-                const currentPeriodMonths = Math.max(1, (d2.getFullYear() - d1.getFullYear()) * 12 + (d2.getMonth() - d1.getMonth()) + 1);
+                // Pre-calculate months divider for historical average
+                const d1=new Date(appData.startDate), d2=new Date(appData.endDate);
+                const curMonths = Math.max(1, (d2.getFullYear()-d1.getFullYear())*12 + (d2.getMonth()-d1.getMonth())+1);
 
                 let bestRes = null, minU = Infinity, bestStd = Infinity;
 
-                for(let i=0; i<150; i++) {
-                    const res = runSimulation(dates, currentPeriodMonths);
+                for(let i=0; i<100; i++) {
+                    const res = runSimulation(dates, curMonths);
                     if(res.unassigned < minU) { minU=res.unassigned; bestRes=res; bestStd=res.stdDev; }
                     else if(res.unassigned === minU && res.stdDev < bestStd) { bestRes=res; bestStd=res.stdDev; }
                 }
@@ -457,100 +561,135 @@
             return 'WEEKDAY';
         }
 
-        function runSimulation(dates, currentPeriodMonths) {
+        function runSimulation(dates, curMonths) {
             let schedule = [];
-            let unassigned = 0;
+            let unassignedTotal = 0;
             
+            // Build stats
             let stats = {};
             appData.people.forEach(p => {
                 const h = (appData.history && appData.history[p.id]) || { months:0, total:0, hol:0, sd:0, fri:0 };
+                // Safety: if history months is 0, treat as new.
+                const histM = h.months || 0;
                 stats[p.id] = {
                     id: p.id,
-                    histMonths: h.months || 0,
-                    histTotal: h.total || 0,
-                    histHol: h.hol || 0,
-                    histSD: h.sd || 0,
-                    histFri: h.fri || 0,
+                    histTotal: h.total||0,
+                    histHol: h.hol||0,
+                    histSD: h.sd||0,
+                    histFri: h.fri||0,
+                    
                     curTotal: 0,
                     curHol: 0,
                     curSD: 0,
                     curFri: 0,
+                    
                     lastIndex: -99,
                     lastWkdIndex: -99,
-                    totalMonths: (h.months || 0) + currentPeriodMonths
+                    totalMonths: histM + curMonths
                 };
             });
 
+            // --- PHASE 1: MANDATORY SUGGESTIONS ---
+            // We lock these in first before the main loop logic tries to optimize.
+            // But to keep logic simple in one pass, we can just handle them inside the loop as "Forced Candidates"
+            // or modify the loop to support "slots".
+            
             for(let i=0; i<dates.length; i++) {
                 const date = dates[i];
                 const iso = date.toISOString().split('T')[0];
                 const type = getDayType(date, iso);
                 const isFriEve = (type==='FRIDAY'||type==='EVE');
+                
+                // Determine how many guards needed
+                const needed = appData.staffing[iso] || 1;
+                let assignedToday = [];
 
-                let pool = appData.people.filter(p => {
-                    const s = stats[p.id];
-                    if(p.blocked.includes(iso)) return false;
-                    if(p.max && s.curTotal >= parseInt(p.max)) return false;
-                    if((i - s.lastIndex) === 1) return false; 
-                    if(!p.doublets && (i - s.lastIndex) === 2) return false;
-                    return true;
+                // 1. Check suggestions (Forced)
+                appData.people.forEach(p => {
+                    if (p.suggested && p.suggested.includes(iso)) {
+                        if (assignedToday.length < needed) {
+                            assign(p.id, iso, type, i, isFriEve, stats, assignedToday);
+                        }
+                        // If more suggestions than slots, surplus suggested people are skipped for now (first come first served in array order)
+                        // Ideally user shouldn't suggest more than capacity.
+                    }
                 });
 
-                if(!pool.length) { schedule.push({date:iso, pid:null, type}); unassigned++; continue; }
+                // 2. Fill remaining slots
+                while(assignedToday.length < needed) {
+                    let pool = appData.people.filter(p => {
+                        // Skip if already assigned today
+                        if(assignedToday.includes(p.name)) return false;
+                        
+                        const s = stats[p.id];
+                        // Blocked?
+                        if(p.blocked.includes(iso)) return false;
+                        // Max?
+                        if(p.max && s.curTotal >= parseInt(p.max)) return false;
+                        // Fatigue?
+                        if((i - s.lastIndex) === 1) return false; 
+                        if(!p.doublets && (i - s.lastIndex) === 2) return false;
+                        return true;
+                    });
 
-                pool.forEach(p => {
-                    const s = stats[p.id];
-                    
-                    // --- SCORING: 2-Tier Strategy ---
-                    // 1. Current Month Load (Weight 10x): Ensure everyone gets work NOW.
-                    // 2. Historical Ratio (Weight 1x): Tie-breaker to favor those with less historical load.
-                    
-                    let score = 0;
-                    
-                    // Priority 1: Current Period Balance
-                    score += s.curTotal * 5000;
-                    
-                    // Priority 2: Historical Fairness (The gentle slope)
-                    // We check the Global Average per month
-                    const globalRatio = (s.histTotal + s.curTotal) / s.totalMonths;
-                    score += globalRatio * 500; 
-
-                    // Buckets follow same logic
-                    if(type === 'HOLIDAY') {
-                        score += s.curHol * 50000; // Priority: Don't give 2 holidays this month if possible
-                        score += ((s.histHol + s.curHol)/s.totalMonths) * 5000;
-                    } 
-                    else if(type === 'WEEKEND') {
-                        score += s.curSD * 10000;
-                        score += ((s.histSD + s.curSD)/s.totalMonths) * 1000;
-                        if((i - s.lastWkdIndex) < 6) score += 50000; // Penalize consecutive
+                    if(!pool.length) {
+                        schedule.push({date:iso, pid:null, name:null, type});
+                        unassignedTotal++;
+                        break; // Stop trying to fill this day
                     }
 
-                    if(p.min && s.curTotal < parseInt(p.min)) score -= 100000; // Force min compliance
+                    // Score candidates
+                    pool.forEach(p => {
+                        const s = stats[p.id];
+                        let score = 0;
+                        
+                        score += s.curTotal * 5000; // Prioritize low current load
+                        const globalRatio = (s.histTotal + s.curTotal) / s.totalMonths;
+                        score += globalRatio * 500; 
 
-                    score += Math.random() * 200; // Noise for shuffling
-                    p.tempScore = score;
-                });
+                        if(type === 'HOLIDAY') {
+                            score += s.curHol * 50000;
+                            score += ((s.histHol + s.curHol)/s.totalMonths) * 5000;
+                        } 
+                        else if(type === 'WEEKEND') {
+                            score += s.curSD * 10000;
+                            score += ((s.histSD + s.curSD)/s.totalMonths) * 1000;
+                            if((i - s.lastWkdIndex) < 6) score += 50000;
+                        }
 
-                pool.sort((a,b) => a.tempScore - b.tempScore);
-                const winner = pool[0];
-                const ws = stats[winner.id];
-                
-                ws.curTotal++;
-                ws.lastIndex = i;
-                if(type==='HOLIDAY') ws.curHol++;
-                else if(type==='WEEKEND') { ws.curSD++; ws.lastWkdIndex=i; }
-                else if(isFriEve) ws.curFri++;
+                        if(p.min && s.curTotal < parseInt(p.min)) score -= 100000;
 
-                schedule.push({ date:iso, pid:winner.id, name:winner.name, type });
+                        score += Math.random() * 200;
+                        p.tempScore = score;
+                    });
+
+                    pool.sort((a,b) => a.tempScore - b.tempScore);
+                    const winner = pool[0];
+                    assign(winner.id, iso, type, i, isFriEve, stats, assignedToday);
+                }
             }
 
-            // Calc std dev of Current Period assignments to ensure fairness NOW
+            // Flatten assignedToday into schedule object structure inside assign function? 
+            // My loop structure pushes to schedule.
+            // Let's adapt helper.
+            function assign(pid, iso, type, idx, isFriEve, st, todayList) {
+                const p = appData.people.find(x => x.id === pid);
+                const s = st[pid];
+                s.curTotal++;
+                s.lastIndex = idx;
+                if(type==='HOLIDAY') s.curHol++;
+                else if(type==='WEEKEND') { s.curSD++; s.lastWkdIndex = idx; }
+                else if(isFriEve) s.curFri++;
+                
+                todayList.push(p.name);
+                schedule.push({ date: iso, pid: p.id, name: p.name, type });
+            }
+
             const currents = Object.values(stats).map(s => s.curTotal);
             const mean = currents.reduce((a,b)=>a+b,0)/currents.length;
             const variance = currents.reduce((a,b)=>a + Math.pow(b-mean,2), 0)/currents.length;
 
-            return { schedule, unassigned, stdDev: Math.sqrt(variance) };
+            return { schedule, unassigned: unassignedTotal, stdDev: Math.sqrt(variance) };
         }
 
         // --- RENDER ---
@@ -560,18 +699,32 @@
             document.getElementById('emptyState').classList.add('hidden');
             
             const alert = document.getElementById('alertBox');
-            if(unassigned > 0) { alert.classList.remove('hidden'); document.getElementById('alertText').innerText = `${unassigned} días sin cubrir.`; }
+            if(unassigned > 0) { alert.classList.remove('hidden'); document.getElementById('alertText').innerText = `${unassigned} plazas sin cubrir.`; }
             else alert.classList.add('hidden');
 
             const tbody = document.getElementById('scheduleBody');
-            tbody.innerHTML = appData.schedule.map(s => {
+            tbody.innerHTML = '';
+            
+            // Sort schedule by date to group mult-staff days
+            appData.schedule.sort((a,b) => a.date.localeCompare(b.date));
+            
+            let lastDate = '';
+            appData.schedule.forEach(s => {
                 const [y,m,d] = s.date.split('-');
                 let cls="text-gray-400", bg="";
                 if(s.type==='HOLIDAY') { cls="text-orange-700 font-bold"; bg="bg-orange-50"; }
                 else if(s.type==='WEEKEND') { cls="text-purple-700 font-bold"; bg="bg-purple-50"; }
                 else if(s.type==='EVE'||s.type==='FRIDAY') { cls="text-teal-600 font-bold"; }
-                return `<tr class="border-b ${bg}"><td class="px-6 py-3">${d}/${m}</td><td class="px-6 py-3 ${cls}">${s.type}</td><td class="px-6 py-3 font-bold ${s.pid?'':'text-red-500'}">${s.name||'VACÍO'}</td></tr>`;
-            }).join('');
+                
+                // Visual separator for days
+                const border = (s.date !== lastDate) ? "border-t-2 border-gray-100" : "border-t-0 border-gray-50";
+                lastDate = s.date;
+
+                const tr = document.createElement('tr');
+                tr.className = `hover:bg-blue-50 transition ${bg} ${border}`;
+                tr.innerHTML = `<td class="px-6 py-2">${d}/${m}</td><td class="px-6 py-2 ${cls}">${s.type}</td><td class="px-6 py-2 font-bold ${s.pid?'':'text-red-500'}">${s.name||'PLAZA VACÍA'}</td>`;
+                tbody.appendChild(tr);
+            });
 
             // Render stats merging Active + Leavers
             const allIds = new Set(appData.people.map(p=>p.id));
@@ -602,7 +755,6 @@
                     name,
                     curTotal: cur.total,
                     grandTotal,
-                    ratio: (grandTotal / safeMonths).toFixed(1),
                     fri: h.fri + cur.fri,
                     sd: h.sd + cur.sd,
                     hol: h.hol + cur.hol,
@@ -615,7 +767,6 @@
                     <td class="px-4 py-3 font-medium">${s.name}</td>
                     <td class="px-4 py-3 text-center text-blue-800 font-bold bg-blue-50">${s.curTotal}</td>
                     <td class="px-4 py-3 text-center font-bold bg-gray-100">${s.grandTotal}</td>
-                    <td class="px-4 py-3 text-center text-gray-500 font-mono">${s.ratio}</td>
                     <td class="px-4 py-3 text-center text-teal-600">${s.fri}</td>
                     <td class="px-4 py-3 text-center text-purple-600">${s.sd}</td>
                     <td class="px-4 py-3 text-center text-orange-600 font-bold">${s.hol}</td>
@@ -623,7 +774,7 @@
             `).join('');
         }
 
-        // --- ACCOUNTING EXPORT (Cumulative) ---
+        // --- ACCOUNTING EXPORT ---
         function downloadReportJSON() {
             let report = {
                 periodo: { inicio: appData.startDate, fin: appData.endDate },
@@ -637,7 +788,6 @@
             allIds.forEach(id => {
                 const activeP = appData.people.find(p => p.id === id);
                 const h = (appData.history && appData.history[id]) || { total:0, hol:0, sd:0, fri:0, months:0, name: activeP ? activeP.name : 'Unknown' };
-                
                 const assignments = appData.schedule.filter(s => s.pid === id).map(s => ({ fecha: s.date, tipo: s.type }));
                 const curStats = { total:0, hol:0, sd:0, fri:0 };
                 assignments.forEach(s => {
@@ -669,20 +819,16 @@
             a.click();
         }
 
-        // --- PDF ---
         function downloadPDF() {
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF();
             doc.text("Contabilidad de Guardias", 14, 20);
             doc.setFontSize(10);
-            doc.text(`Periodo Actual: ${appData.startDate} a ${appData.endDate}`, 14, 26);
+            doc.text(`Periodo: ${appData.startDate} a ${appData.endDate}`, 14, 26);
             
             const rows = [];
-            // Reuse logic from renderResults essentially
             const allIds = new Set(appData.people.map(p=>p.id));
             if(appData.history) Object.keys(appData.history).forEach(k => allIds.add(k));
-            const d1=new Date(appData.startDate), d2=new Date(appData.endDate);
-            const curMonths = Math.max(1, (d2.getFullYear()-d1.getFullYear())*12 + (d2.getMonth()-d1.getMonth())+1);
 
             allIds.forEach(id => {
                 const activeP = appData.people.find(p => p.id === id);
@@ -695,47 +841,33 @@
                     else if(s.type==='FRIDAY'||s.type==='EVE') c.f++;
                 });
                 
-                const tot = h.total + c.t;
-                const m = (activeP ? curMonths : 0) + (h.months || 0);
-                const rat = (tot / (m||1)).toFixed(1);
-                
-                rows.push([
-                    activeP ? activeP.name : `${h.name} (Baja)`,
-                    c.t, // Este mes
-                    tot, // Total
-                    rat,
-                    h.fri + c.f,
-                    h.sd + c.s,
-                    h.hol + c.h
-                ]);
+                rows.push([activeP ? activeP.name : `${h.name} (Baja)`, c.t, h.total+c.t, h.fri+c.f, h.sd+c.s, h.hol+c.h]);
             });
 
             doc.autoTable({
                 startY: 35,
-                head: [['Nombre', 'Este Mes', 'Total Acum', 'Prom/Mes', 'V+V', 'S-D', 'Fest']],
+                head: [['Nombre', 'Este Mes', 'Total Acum', 'V+V', 'S-D', 'Fest']],
                 body: rows,
                 theme: 'striped'
             });
 
+            const scheduleRows = appData.schedule.map(s => {
+                const [y,m,d] = s.date.split('-');
+                return [`${d}/${m}/${y}`, s.type, s.name || 'SIN ASIGNAR'];
+            });
+
+            doc.autoTable({ startY: doc.lastAutoTable.finalY + 15, head: [['Fecha', 'Tipo', 'Asignado']], body: scheduleRows });
             doc.save('informe_contable.pdf');
         }
 
         function saveState() { localStorage.setItem('guardias', JSON.stringify(appData)); }
         function loadState() { const d = localStorage.getItem('guardias'); if(d) appData = { ...appData, ...JSON.parse(d) }; }
         function resetData() { if(confirm('Borrar todo?')) { localStorage.removeItem('guardias'); location.reload(); } }
-        function exportData() { 
-            const blob = new Blob([JSON.stringify(appData)], {type: 'application/json'});
-            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'copia_seguridad.json'; a.click();
-        }
+        function exportData() { const blob = new Blob([JSON.stringify(appData)], {type: 'application/json'}); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'backup.json'; a.click(); }
         function triggerImport() { document.getElementById('fileInput').click(); }
-        function importData(el) {
-            const f = el.files[0]; if(!f) return;
-            const r = new FileReader();
-            r.onload = e => { appData = JSON.parse(e.target.result); saveState(); location.reload(); };
-            r.readAsText(f);
-        }
-        function checkCookies() { if(!localStorage.getItem('cookiesAccepted')) document.getElementById('cookieBanner').classList.remove('hidden'); }
-        function acceptCookies() { localStorage.setItem('cookiesAccepted', 'true'); document.getElementById('cookieBanner').classList.add('hidden'); }
+        function importData(el) { const f = el.files[0]; if(!f) return; const r = new FileReader(); r.onload = e => { appData = JSON.parse(e.target.result); saveState(); location.reload(); }; r.readAsText(f); }
+        function checkCookies() { if(!localStorage.getItem('okCookie')) document.getElementById('cookieBanner').classList.remove('hidden'); }
+        function acceptCookies() { localStorage.setItem('okCookie','1'); document.getElementById('cookieBanner').classList.add('hidden'); }
     </script>
 </body>
 </html>
