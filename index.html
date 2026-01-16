@@ -423,7 +423,8 @@
             document.getElementById('modalTitle').innerText = 'Excepciones Plazas'; 
             document.getElementById('personModalControls').classList.add('hidden'); 
             document.getElementById('staffingControls').classList.remove('hidden');
-            document.getElementById('modalStaffingCount').value = appData.defaultSlots || 2;
+            // DEFAULT VALUE TO 2 AS REQUESTED
+            document.getElementById('modalStaffingCount').value = 2;
             openModal(); 
         }
         function openModal() { document.getElementById('calendarModal').classList.remove('hidden'); document.getElementById('calendarModal').classList.add('flex'); if(appData.startDate) { 
@@ -558,7 +559,7 @@
                 document.getElementById('loadingSubtitle').innerText = "Manteniendo asignaciones fijas";
             } else {
                 document.getElementById('loadingTitle').innerText = "Generando Calendario...";
-                document.getElementById('loadingSubtitle').innerText = "Calculando desde cero";
+                document.getElementById('loadingSubtitle').innerText = "Calculando por capas de prioridad";
             }
 
             // Sanitize suggestions
@@ -566,8 +567,6 @@
                 if(p.suggested && p.suggested.length > 1) {
                     p.suggested.sort();
                     for(let i = p.suggested.length - 1; i > 0; i--) {
-                        // Date parsing consistency check not needed if iso format YYYY-MM-DD
-                        // but logic to remove consecutive remains valid
                         const [y1, m1, d1] = p.suggested[i].split('-').map(Number);
                         const [y2, m2, d2] = p.suggested[i-1].split('-').map(Number);
                         const dt1 = new Date(y1, m1-1, d1);
@@ -613,10 +612,11 @@
         }
 
         function runSimulation(dates, curMonths, existingSchedule) {
-            let schedule = [];
+            let schedule = []; // Array of slot objects
             let unassignedTotal = 0;
             let fixedSlots = {}; 
             
+            // Build fixed slots
             if(existingSchedule && existingSchedule.length > 0) {
                 existingSchedule.forEach(s => {
                     if(s.pid) {
@@ -640,108 +640,176 @@
 
             const defaultSlots = parseInt(document.getElementById('defaultSlots').value) || 1;
 
-            for(let i=0; i<dates.length; i++) {
-                const date = dates[i];
-                const iso = getISO(date);
-                const type = getDayType(date, iso);
+            // --- BUILD WORK ORDER ---
+            // Group indices by priority: 
+            // 1. Mandatory (Suggestions)
+            // 2. Fri/Eve
+            // 3. Wkd/Hol
+            // 4. Normal
+            
+            let dateMeta = dates.map((d, i) => {
+                const iso = getISO(d);
+                const type = getDayType(d, iso);
                 const isFriEve = (type==='FRIDAY'||type==='EVE');
                 const isHigh = (type === 'HOLIDAY' || type === 'WEEKEND');
-                
                 const needed = appData.staffing[iso] !== undefined ? appData.staffing[iso] : defaultSlots;
-                let assignedToday = [];
+                return { idx: i, date: d, iso, type, isFriEve, isHigh, needed, assigned: [] };
+            });
 
-                if(fixedSlots[iso]) {
-                    fixedSlots[iso].forEach(pid => {
+            // Pre-fill preserved
+            dateMeta.forEach(dm => {
+                if(fixedSlots[dm.iso]) {
+                    fixedSlots[dm.iso].forEach(pid => {
                         const p = appData.people.find(x => x.id === pid);
-                        if(p) assign(p.id, iso, type, i, isFriEve, stats, assignedToday);
+                        if(p) {
+                            assignToMeta(dm, p, stats);
+                        }
                     });
                 }
+            });
 
-                if(assignedToday.length >= needed) continue;
-
-                let minFriCount = Infinity;
-                Object.values(stats).forEach(s => { if (s.curFri < minFriCount) minFriCount = s.curFri; });
-
+            // PHASE 1: SUGGESTIONS (Mandatory)
+            // Iterate all dates, check if anyone suggested this date
+            dateMeta.forEach(dm => {
+                if(dm.assigned.length >= dm.needed) return;
+                
                 appData.people.forEach(p => {
-                    if (p.activeSuggestions && p.activeSuggestions.includes(iso)) {
-                        const isBanned = appData.manualBans && appData.manualBans[iso] && appData.manualBans[iso].includes(p.id);
-                        if (!isBanned && assignedToday.length < needed && !assignedToday.includes(p.name)) {
-                            assign(p.id, iso, type, i, isFriEve, stats, assignedToday);
+                    if (p.activeSuggestions && p.activeSuggestions.includes(dm.iso)) {
+                        const isBanned = appData.manualBans && appData.manualBans[dm.iso] && appData.manualBans[dm.iso].includes(p.id);
+                        if (!isBanned && dm.assigned.length < dm.needed && !dm.assigned.includes(p.name)) {
+                            // Can assign ignoring strict balance, but respecting consecutive hard rule
+                            if (!checkConsecutive(p.id, dm.idx, dateMeta, p.doublets)) return; 
+                            assignToMeta(dm, p, stats);
                         }
                     }
                 });
+            });
 
-                while(assignedToday.length < needed) {
-                    let pool = appData.people.filter(p => {
-                        if(assignedToday.includes(p.name)) return false;
-                        const s = stats[p.id];
-                        if(p.blocked.includes(iso)) return false;
-                        if(appData.manualBans && appData.manualBans[iso] && appData.manualBans[iso].includes(p.id)) return false;
+            // Define Pools
+            const poolFri = dateMeta.filter(d => d.isFriEve && d.assigned.length < d.needed);
+            const poolHigh = dateMeta.filter(d => d.isHigh && d.assigned.length < d.needed); // Wkd + Hol
+            const poolNorm = dateMeta.filter(d => !d.isFriEve && !d.isHigh && d.assigned.length < d.needed);
+
+            // Helper to process a pool
+            const processPool = (pool) => {
+                pool.forEach(dm => {
+                    while(dm.assigned.length < dm.needed) {
+                        let candidates = getCandidates(dm, stats, dateMeta);
+                        if(candidates.length === 0) break; // Leave empty
                         
-                        if(p.max && s.curTotal >= parseInt(p.max)) return false;
-                        if((i - s.lastIndex) === 1) return false; 
-                        if(!p.doublets && (i - s.lastIndex) === 2) return false;
+                        // Score
+                        candidates.forEach(p => {
+                            const s = stats[p.id];
+                            let score = 0;
+                            // Fairness weights
+                            if(dm.isHigh) {
+                                score += (s.histHol + s.curHol + s.histSD + s.curSD) * 10000;
+                                if((dm.idx - s.lastWkdIndex) < 6) score += 50000;
+                            } else if(dm.isFriEve) {
+                                score += (s.histFri + s.curFri) * 5000;
+                            } else {
+                                const globalRatio = (s.histTotal + s.curTotal) / s.totalMonths;
+                                score += globalRatio * 500;
+                            }
+                            if(p.min && s.curTotal < parseInt(p.min)) score -= 100000;
+                            score += Math.random() * 100;
+                            p.tempScore = score;
+                        });
                         
-                        if (isFriEve && s.curFri > minFriCount + 1) return false;
-
-                        return true;
-                    });
-
-                    if(!pool.length) {
-                        // Push empty slots to meet quota visually
-                        const missing = needed - assignedToday.length;
-                        for(let k=0; k<missing; k++) {
-                            schedule.push({date:iso, pid:null, name:null, type, idx: i}); 
-                            unassignedTotal++; 
-                        }
-                        break;
+                        candidates.sort((a,b) => a.tempScore - b.tempScore);
+                        assignToMeta(dm, candidates[0], stats);
                     }
+                });
+            };
 
-                    pool.forEach(p => {
-                        const s = stats[p.id];
-                        let score = 0;
-                        const countHigh = s.histSD + s.curSD + s.histHol + s.curHol;
-                        const countMid = s.histFri + s.curFri;
-                        
-                        if (isHigh) {
-                            score += countHigh * 100000;
-                            if((i - s.lastWkdIndex) < 6) score += 500000;
-                        } 
-                        else if (isFriEve) {
-                            score += countMid * 50000;
-                        } 
-                        else {
-                            score += s.curTotal * 5000;
-                            const globalRatio = (s.histTotal + s.curTotal) / s.totalMonths;
-                            score += globalRatio * 500;
-                        }
+            // Execute Phases
+            processPool(poolFri);  // Phase 2
+            processPool(poolHigh); // Phase 3
+            processPool(poolNorm); // Phase 4
 
-                        if(p.min && s.curTotal < parseInt(p.min)) score -= 100000;
-                        score += Math.random() * 100;
-                        p.tempScore = score;
-                    });
-
-                    pool.sort((a,b) => a.tempScore - b.tempScore);
-                    const winner = pool[0];
-                    assign(winner.id, iso, type, i, isFriEve, stats, assignedToday);
+            // Finalize Schedule Array
+            dateMeta.forEach(dm => {
+                // Add assigned
+                dm.assigned.forEach(pName => {
+                    // Reverse lookup ID (inefficient but safe)
+                    const p = appData.people.find(x => x.name === pName);
+                    schedule.push({ date: dm.iso, pid: p.id, name: p.name, type: dm.type, idx: dm.idx });
+                });
+                // Add unassigned
+                const missing = dm.needed - dm.assigned.length;
+                for(let k=0; k<missing; k++) {
+                    schedule.push({ date: dm.iso, pid: null, name: null, type: dm.type, idx: dm.idx });
+                    unassignedTotal++;
                 }
-            }
+            });
 
-            function assign(pid, iso, type, idx, isFriEve, st, todayList) {
-                const p = appData.people.find(x => x.id === pid);
-                const s = st[pid];
-                s.curTotal++; s.lastIndex = idx;
-                if(type==='HOLIDAY') s.curHol++;
-                else if(type==='WEEKEND') { s.curSD++; s.lastWkdIndex = idx; }
-                else if(isFriEve) s.curFri++;
-                todayList.push(p.name);
-                schedule.push({ date: iso, pid: p.id, name: p.name, type, idx });
-            }
-
+            // Calculate Deviation on TOTAL loads
             const currents = Object.values(stats).map(s => s.curTotal);
             const mean = currents.reduce((a,b)=>a+b,0)/currents.length;
             const variance = currents.reduce((a,b)=>a + Math.pow(b-mean,2), 0)/currents.length;
+            
             return { schedule, unassigned: unassignedTotal, stdDev: Math.sqrt(variance), statsRef: stats };
+        }
+
+        function checkConsecutive(pid, idx, metaArr, allowDoublets) {
+            // Check Prev Day
+            if (idx > 0) {
+                const prev = metaArr[idx-1];
+                const pName = appData.people.find(x => x.id === pid).name;
+                if (prev.assigned.includes(pName)) return false;
+            }
+            // Check Next Day (if already assigned in future phases or suggestions)
+            if (idx < metaArr.length - 1) {
+                const next = metaArr[idx+1];
+                const pName = appData.people.find(x => x.id === pid).name;
+                if (next.assigned.includes(pName)) return false;
+            }
+            // Doublet Logic
+            if (!allowDoublets) {
+                if (idx > 1) {
+                    const prev2 = metaArr[idx-2];
+                    const pName = appData.people.find(x => x.id === pid).name;
+                    if (prev2.assigned.includes(pName)) return false;
+                }
+                if (idx < metaArr.length - 2) {
+                    const next2 = metaArr[idx+2];
+                    const pName = appData.people.find(x => x.id === pid).name;
+                    if (next2.assigned.includes(pName)) return false;
+                }
+            }
+            return true;
+        }
+
+        function getCandidates(dm, stats, metaArr) {
+            return appData.people.filter(p => {
+                // Already assigned today?
+                if (dm.assigned.includes(p.name)) return false;
+                
+                // Blocked?
+                if (p.blocked.includes(dm.iso)) return false;
+                
+                // Manual Ban?
+                if (appData.manualBans && appData.manualBans[dm.iso] && appData.manualBans[dm.iso].includes(p.id)) return false;
+                
+                // Max?
+                const s = stats[p.id];
+                if (p.max && s.curTotal >= parseInt(p.max)) return false;
+                
+                // Fatigue / Consecutive (Using helper that looks at metaArr state)
+                if (!checkConsecutive(p.id, dm.idx, metaArr, p.doublets)) return false;
+
+                return true;
+            });
+        }
+
+        function assignToMeta(dm, p, st) {
+            dm.assigned.push(p.name);
+            const s = st[p.id];
+            s.curTotal++;
+            s.lastIndex = dm.idx;
+            if (dm.type === 'HOLIDAY') s.curHol++;
+            else if (dm.type === 'WEEKEND') { s.curSD++; s.lastWkdIndex = dm.idx; }
+            else if (dm.isFriEve) s.curFri++;
         }
 
         // --- GAP FILLING ---
