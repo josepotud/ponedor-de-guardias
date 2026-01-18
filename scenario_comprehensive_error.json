@@ -1,0 +1,64 @@
+{
+    "startDate": "2026-04-01",
+    "endDate": "2026-04-15",
+    "people": [
+        {
+            "id": "p1",
+            "name": "Dr. Strict",
+            "doublets": false,
+            "blocked": [
+                "2026-04-05"
+            ],
+            "suggested": [
+                "2026-04-02",
+                "2026-04-03"
+            ],
+            "min": 4,
+            "max": 5
+        },
+        {
+            "id": "p2",
+            "name": "Dr. Doublet",
+            "doublets": true,
+            "blocked": [],
+            "suggested": [
+                "2026-04-10",
+                "2026-04-11",
+                "2026-04-12"
+            ],
+            "min": 0,
+            "max": 10
+        },
+        {
+            "id": "p3",
+            "name": "Dr. Filler",
+            "doublets": false,
+            "blocked": [],
+            "suggested": [],
+            "min": 0,
+            "max": 10
+        },
+        {
+            "id": "p4",
+            "name": "Dr. Thursday",
+            "doublets": false,
+            "blocked": [],
+            "suggested": [
+                "2026-04-09",
+                "2026-04-11"
+            ],
+            "min": 0,
+            "max": 10
+        }
+    ],
+    "holidays": [
+        "2026-04-03"
+    ],
+    "staffing": {
+        "2026-04-02": 2,
+        "2026-04-03": 2,
+        "2026-04-09": 1,
+        "2026-04-11": 1
+    },
+    "defaultSlots": 1
+}

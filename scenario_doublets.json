@@ -1,0 +1,35 @@
+{
+    "startDate": "2026-03-06",
+    "endDate": "2026-03-09",
+    "people": [
+        {
+            "id": "p1",
+            "name": "Dr. Doublet",
+            "doublets": true,
+            "blocked": [],
+            "suggested": [
+                "2026-03-06",
+                "2026-03-07",
+                "2026-03-08"
+            ],
+            "min": 0,
+            "max": 10
+        },
+        {
+            "id": "p2",
+            "name": "Dr. Preventer",
+            "doublets": false,
+            "blocked": [],
+            "suggested": [],
+            "min": 0,
+            "max": 10
+        }
+    ],
+    "holidays": [],
+    "staffing": {
+        "2026-03-06": 1,
+        "2026-03-07": 1,
+        "2026-03-08": 1
+    },
+    "defaultSlots": 1
+}

@@ -1,0 +1,42 @@
+[
+  {
+    "id_persona": "doc_1",
+    "nombre": "Ana García",
+    "estadisticas": {
+      "total_guardias": 5,
+      "desglose": {
+        "festivos": 1,
+        "fin_de_semana": 2,
+        "viernes_visperas": 1
+      }
+    },
+    "preferencias": {
+        "bloqueos": ["2026-02-14", "2026-02-15"],
+        "peticiones": ["2026-02-20"]
+    }
+  },
+  {
+    "id_persona": "doc_2",
+    "nombre": "Carlos López",
+    "estadisticas": {
+      "total_guardias": 6,
+      "desglose": {
+        "festivos": 2,
+        "fin_de_semana": 1,
+        "viernes_visperas": 2
+      }
+    }
+  },
+  {
+    "id_persona": "doc_3",
+    "nombre": "Beatriz Menéndez",
+     "estadisticas": {
+      "total_guardias": 4,
+      "desglose": {
+        "festivos": 0,
+        "fin_de_semana": 0,
+        "viernes_visperas": 1
+      }
+    }
+  }
+]

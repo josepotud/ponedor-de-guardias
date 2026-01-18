@@ -1,0 +1,22 @@
+{
+    "startDate": "2026-05-01",
+    "endDate": "2026-05-03",
+    "people": [
+        {
+            "id": "p1",
+            "name": "Dr. HolidayLover",
+            "doublets": false,
+            "blocked": [],
+            "suggested": [],
+            "min": 0,
+            "max": 10
+        }
+    ],
+    "holidays": [
+        "2026-05-01"
+    ],
+    "staffing": {
+        "2026-05-01": 1
+    },
+    "defaultSlots": 1
+}

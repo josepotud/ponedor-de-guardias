@@ -1,0 +1,67 @@
+{
+    "people": [
+        {
+            "id": "p1",
+            "name": "Dr. Conflict (A)",
+            "blocked": [],
+            "suggested": [
+                "2026-02-14",
+                "2026-02-15"
+            ],
+            "doublets": true,
+            "min": 0,
+            "max": ""
+        },
+        {
+            "id": "p2",
+            "name": "Dr. Conflict (B)",
+            "blocked": [],
+            "suggested": [
+                "2026-02-14"
+            ],
+            "doublets": false,
+            "min": 0,
+            "max": ""
+        },
+        {
+            "id": "p3",
+            "name": "Dr. Blocked",
+            "blocked": [
+                "2026-02-06",
+                "2026-02-13",
+                "2026-02-20",
+                "2026-02-27"
+            ],
+            "suggested": [],
+            "doublets": false,
+            "min": 0,
+            "max": ""
+        },
+        {
+            "id": "p4",
+            "name": "Dr. Flexible",
+            "blocked": [],
+            "suggested": [],
+            "doublets": true,
+            "min": 0,
+            "max": ""
+        },
+        {
+            "id": "p5",
+            "name": "Dr. Minimal",
+            "blocked": [],
+            "suggested": [],
+            "doublets": false,
+            "min": 0,
+            "max": ""
+        }
+    ],
+    "startDate": "2026-02-01",
+    "endDate": "2026-02-28",
+    "holidays": [
+        "2026-02-28"
+    ],
+    "staffing": {},
+    "history": {},
+    "defaultSlots": 1
+}
