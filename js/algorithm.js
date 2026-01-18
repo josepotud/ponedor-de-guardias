@@ -111,12 +111,13 @@ window.runSimulation = function (dates, curMonths, existingSchedule) {
                 day.seats.forEach(seat => {
                     if (seat.pid) {
                         if (!fixedSlots[day.date]) fixedSlots[day.date] = [];
-                        fixedSlots[day.date].push(seat.pid);
+                        // Store full object to preserve lock status
+                        fixedSlots[day.date].push({ pid: seat.pid, locked: !!seat.locked });
                     }
                 });
-            } else if (day.pid) { // Fallback for loading OLD format accidentally?
+            } else if (day.pid) { // Legacy fallback
                 if (!fixedSlots[day.date]) fixedSlots[day.date] = [];
-                fixedSlots[day.date].push(day.pid);
+                fixedSlots[day.date].push({ pid: day.pid, locked: true }); // Legacy assumed locked? Or false? Let's say true for safety.
             }
         });
     }
@@ -143,15 +144,26 @@ window.runSimulation = function (dates, curMonths, existingSchedule) {
         const isHigh = (type === 'HOLIDAY' || type === 'WEEKEND');
         const needed = window.appData.staffing[iso] !== undefined ? window.appData.staffing[iso] : defaultSlots;
         const dayOfWeek = d.getDay();
-        return { idx: i, date: d, iso, type, isFriEve, isHigh, needed, assigned: [], dayOfWeek };
+        return { idx: i, date: d, iso, type, isFriEve, isHigh, needed, assigned: [], lockedPids: [], dayOfWeek };
     });
 
     // Pre-fill
     dateMeta.forEach(dm => {
         if (fixedSlots[dm.iso]) {
-            fixedSlots[dm.iso].forEach(pid => {
+            fixedSlots[dm.iso].forEach(item => {
+                // item can be just PID (legacy) or Object { pid, locked }
+                let pid = item;
+                let isRealLock = false;
+                if (typeof item === 'object' && item.pid) {
+                    pid = item.pid;
+                    isRealLock = item.locked;
+                }
+
                 const p = window.appData.people.find(x => x.id === pid);
-                if (p) assignToMeta(dm, p, stats);
+                if (p) {
+                    assignToMeta(dm, p, stats);
+                    if (isRealLock) dm.lockedPids.push(p.id); // Only track as VISUALLY locked if it was locked
+                }
             });
         }
     });
@@ -188,15 +200,77 @@ window.runSimulation = function (dates, curMonths, existingSchedule) {
                     if (dm.isHigh) {
                         score += (s.histHol + s.curHol + s.histSD + s.curSD) * 20000;
                         if ((dm.idx - s.lastWkdIndex) < 6) score += 50000;
+
+                        // DOUBLET PRIORITY LOGIC
+                        if (p.doublets === true && (s.curHol > 0 || s.curSD > 0 || s.histHol > 0 || s.histSD > 0)) {
+                            // If they accept doublets and catch a high priority day, encourage them to take more (if permitted)
+                            // To facilitate "grouping" rather than spreading.
+                            // Actually, standard logic *penalizes* having many. 
+                            // We want to REVERSE that penalty or add bonus if they fit the pattern.
+                            // Pattern: Alternating Days.
+                            // If they worked N-2 or N+2 (impossible here), or just generally to group doublets in weekends.
+                            // Simple heuristic: If AllowDoublets, Reduce the "High Load" penalty slightly?
+                            // Or explicitly bonus:
+                            score -= 25000; // Reduce the penalty for having high days
+                        }
                     } else if (dm.isFriEve) {
                         score += (s.histFri + s.curFri) * 10000;
                     }
                     const globalRatio = (s.histTotal + s.curTotal) / s.totalMonths;
                     score += globalRatio * 1000;
 
-                    if ((dm.dayOfWeek === 6 || dm.dayOfWeek === 0) && hasThursday(p.id, dm.idx, dateMeta)) {
-                        score += 1000000;
+                    // --- RULE: Thursday Influence ---
+                    // "Si le toca un jueves, tiene que tener menos probabilidad de que le toque sabado o domingo"
+                    // Check if candidate has Thursday (index - 2 for Sat, index - 3 for Sun)
+                    // Actually hasThursday checks dynamic lookback.
+                    // Let's rely on explicit day checks.
+                    if (dm.dayOfWeek === 6 || dm.dayOfWeek === 0) {
+                        const hasThu = hasThursday(p.id, dm.idx, dateMeta);
+                        if (hasThu) {
+                            score += 500000; // PENALTY (Higher score = worse)
+                        }
                     }
+
+                    // --- RULE: Fri -> Sun Priority (Doublets) ---
+                    // "Si un usuario quiere dobletes y le toca un viernes, prioriza que le toque un domingo."
+                    if (dm.dayOfWeek === 0 && p.doublets === true) {
+                        // Check Friday (Index - 2)
+                        // Note: dm.idx is current index. Friday is idx - 2.
+                        if (dm.idx >= 2) {
+                            const friDay = dateMeta[dm.idx - 2];
+                            // Check assignment in metadata or stats? Metadata 'assigned' is best source of truth for THIS run.
+                            // But we need to check if P is in that Friday.
+                            // The `assigned` array contains IDs.
+                            if (friDay.assigned.includes(p.id)) {
+                                score -= 100000; // BONUS (Lower score = better)
+                            }
+                        }
+                    }
+
+                    // --- REMOVED RULE: Sat+Sun -> Thu Boost ---
+                    // User explicitly said: "Si le toca un sabado y un domingo, no tiene que tener más facilidad para que le toque el jueves."
+                    // So we removed the old `if hasThursday ... score += 1000000` (which was actually a penalty logic previously written as penalty? 
+                    // No, previous code was `score += 1000000` which is a PENALTY in this sorting order? 
+                    // WAIT. `candidates.sort((a, b) => a.tempScore - b.tempScore);`
+                    // So Lower Score = Better Rank? OR Higher Score = Better Rank?
+                    // Let's check:
+                    // `candidates.sort((a, b) => stats[a.id].curTotal - stats[b.id].curTotal);` (Initial sort: Low load first)
+                    // Inside processPool: `candidates.sort((a, b) => a.tempScore - b.tempScore);`
+                    // So LOWEST tempScore wins.
+                    //
+                    // Original Code:
+                    // `score += (s.histHol + ...) * 20000;`  -> More holidays = Higher Score = Worse Rank. CORRECT.
+                    // `if ((dm.dayOfWeek === 6 || dm.dayOfWeek === 0) && hasThursday(...)) { score += 1000000; }`
+                    // This was a PENALTY. "If Sat/Sun AND has Thursday -> Huge Penalty".
+                    // The user said: "Si le toca un jueves, tiene que tener menos probabilidad de que le toque sabado o domingo"
+                    // So `score += 500000` (Penalty) is correct.
+                    //
+                    // And "Si le toca un sabado y un domingo, no tiene que tener más facilidad para que le toque el jueves" implies no BONUS for Thu.
+                    //
+                    // And "Fri -> Sun priority": We want a BONUS. So `score -= 100000`. matches.
+                    //
+                    // Logic seems correct: Lower is better.
+
                     const minTotal = Math.min(...Object.values(stats).map(z => z.curTotal));
                     if (s.curTotal > minTotal + 1) score += 50000;
 
@@ -221,7 +295,9 @@ window.runSimulation = function (dates, curMonths, existingSchedule) {
         // Add assigned
         dm.assigned.forEach((pId, i) => {
             const p = window.appData.people.find(x => x.id === pId);
-            seats.push({ pid: p.id, name: p.name, idx: i });
+            // Check if this PID was locked for this Date
+            const isLocked = dm.lockedPids && dm.lockedPids.includes(pId);
+            seats.push({ pid: p.id, name: p.name, idx: i, locked: !!isLocked });
         });
         // Add empty info
         const missing = dm.needed - dm.assigned.length;
@@ -373,26 +449,21 @@ window.fillGaps = function (schedule, stats, dates) {
         }
 
         if (!filled) {
-            // TRY 2: Swap
+            // TRY 2: Swap Maneuver
             for (let p of candidates) {
-                // Check Prev Day
+                // Check Prev Day (Swap with N-1)
                 if (dayIdx > 0) {
                     const prevDay = schedule[dayIdx - 1];
                     const prevSeat = prevDay.seats.find(s => s.pid === p.id);
-                    if (prevSeat) {
+                    // PROTECT: Do not steal if locked
+                    if (prevSeat && !prevSeat.locked) {
                         const originalPid = prevSeat.pid;
                         prevSeat.pid = null; // Tentative Remove
 
                         if (isValidAssignment(p.id, dayIdx, null, schedule, p.doublets)) {
                             seat.pid = p.id; seat.name = p.name;
                             prevSeat.name = null;
-                            stats[p.id].curTotal++; // Neutral change actually? No, we add one here.
-                            // But we removed one from Prev... wait. 
-                            // Logic: We added P to DayIdx. We removed P from PrevDay.
-                            // So P's count is same.
-                            // But we created a gap in PrevDay.
-                            // stats should reflect the finalized count.
-                            // stats[p.id].curTotal is correct (unchanged).
+                            stats[p.id].curTotal++;
                             filled = true;
                             break;
                         } else {
@@ -401,11 +472,12 @@ window.fillGaps = function (schedule, stats, dates) {
                     }
                 }
 
-                // Check Next Day
+                // Check Next Day (Swap with N+1)
                 if (dayIdx < schedule.length - 1) {
                     const nextDay = schedule[dayIdx + 1];
                     const nextSeat = nextDay.seats.find(s => s.pid === p.id);
-                    if (nextSeat) {
+                    // PROTECT: Do not steal if locked
+                    if (nextSeat && !nextSeat.locked) {
                         const originalPid = nextSeat.pid;
                         nextSeat.pid = null;
 

@@ -3,23 +3,72 @@ document.addEventListener('DOMContentLoaded', () => {
     loadState();
     if (!window.appData.startDate) {
         const today = new Date();
-        const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-        const endMonth = new Date(today.getFullYear(), today.getMonth() + 2, 0);
-        window.appData.startDate = getISO(nextMonth);
-        window.appData.endDate = getISO(endMonth);
+        // Defaults: Entire NEXT month
+        const nextMonthStart = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+        const nextMonthEnd = new Date(today.getFullYear(), today.getMonth() + 2, 0);
+        window.appData.startDate = getISO(nextMonthStart);
+        window.appData.endDate = getISO(nextMonthEnd);
         saveState();
     }
     const startEl = document.getElementById('startDate');
     const endEl = document.getElementById('endDate');
     const slotsEl = document.getElementById('defaultSlots');
 
+    // Date Validation & Auto-Init Logic
+    if (startEl && endEl) {
+        startEl.addEventListener('change', () => {
+            if (startEl.value > endEl.value && endEl.value) {
+                endEl.value = startEl.value;
+            }
+            saveStateInputs();
+            if (!window.appData.schedule || window.appData.schedule.length === 0 || confirm("¿Cambiar fechas y reiniciar calendario?")) {
+                window.appData.startDate = startEl.value;
+                window.appData.endDate = endEl.value;
+                initializeEmptySchedule();
+            }
+        });
+        endEl.addEventListener('change', () => {
+            if (endEl.value < startEl.value && startEl.value) {
+                startEl.value = endEl.value;
+            }
+            saveStateInputs();
+            if (!window.appData.schedule || window.appData.schedule.length === 0 || confirm("¿Cambiar fechas y reiniciar calendario?")) {
+                window.appData.startDate = startEl.value;
+                window.appData.endDate = endEl.value;
+                initializeEmptySchedule();
+            }
+        });
+    }
+
     if (startEl) startEl.value = window.appData.startDate;
     if (endEl) endEl.value = window.appData.endDate;
     if (slotsEl) slotsEl.value = window.appData.defaultSlots || 1;
 
+    // UX: Enter key to add person
+    const inputs = ['newPersonName', 'newPersonMin', 'newPersonMax'];
+    inputs.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') window.addPerson();
+            });
+        }
+    });
+
     renderPeople();
     updateHistoryBadge();
-    if (window.appData.schedule && window.appData.schedule.length > 0) renderResults(0);
+
+    // Check loaded schedule for alerts OR Init empty
+    if (window.appData.schedule && window.appData.schedule.length > 0) {
+        let unassignedCount = 0;
+        window.appData.schedule.forEach(day => {
+            day.seats.forEach(s => { if (!s.pid) unassignedCount++; });
+        });
+        renderResults(unassignedCount);
+    } else {
+        // Init empty on load if nothing exists
+        initializeEmptySchedule();
+    }
 
     document.getElementById('calendarModal').addEventListener('click', function (e) {
         if (e.target === this) closeModal();
@@ -92,6 +141,7 @@ window.startGeneration = function (preserveExisting) {
 }
 
 // Updated signature: identifies seat by DayIndex + SeatIndex (most robust)
+// Updated signature: identifies seat by DayIndex + SeatIndex (most robust)
 window.clearSlot = function (dateIso, seatIdx) {
     // Find the day by date
     const day = window.appData.schedule.find(s => s.date === dateIso);
@@ -101,18 +151,22 @@ window.clearSlot = function (dateIso, seatIdx) {
 
         if (pid) {
             const p = window.appData.people.find(x => x.id === pid);
-            if (p && !p.blocked.includes(dateIso)) {
-                p.blocked.push(dateIso);
-                if (p.suggested) p.suggested = p.suggested.filter(d => d !== dateIso);
+            if (p) {
+                // Restore auto-block on removal (User Request)
+                if (!p.blocked.includes(dateIso)) {
+                    p.blocked.push(dateIso);
+                    if (p.suggested) p.suggested = p.suggested.filter(d => d !== dateIso);
+                }
             }
 
             slot.pid = null;
             slot.name = null;
+            slot.locked = false; // Ensure padlock is removed from empty slot
             saveState();
             renderResults(0);
-            renderPeople();
+            renderPeople(); // Re-render people to show new blocked status count?
             const dateStr = dateIso.split('-').reverse().join('/');
-            showToast(`Guardia borrada: ${p.name} bloqueado el ${dateStr}`, 'warning');
+            showToast(`Guardia borrada y día bloqueado para ${p.name}`, 'warning');
         }
     }
 }
@@ -193,9 +247,108 @@ window.applyManualAssign = function (dayIdx, seatIdx, pid) {
 
     targetToken.pid = p.id;
     targetToken.name = p.name;
+    // Lock it so fillGaps doesn't move it
+    targetToken.locked = true;
     saveState();
     renderResults(0);
     showToast(`Asignado: ${p.name} -> ${day.date}`, 'success');
+}
+
+window.initializeEmptySchedule = function () {
+    // Only if no schedule or confirm? For now, we do it if empty.
+    // Or if dates change, we effectively reset.
+    // Let's generate the structure without assigning.
+    const dates = getDatesRange(window.appData.startDate, window.appData.endDate);
+    const slotsPerDay = parseInt(document.getElementById('defaultSlots').value) || 2;
+    // Keep existing manual assignments if possible? Too complex for first iteration.
+    // User requested "appears empty".
+
+    // We strictly rebuild structure.
+    window.appData.schedule = dates.map(iso => {
+        const d = new Date(iso);
+        let type = 'NORMAL';
+        if (window.appData.holidays.includes(iso)) type = 'HOLIDAY';
+        else if (d.getDay() === 0 || d.getDay() === 6) type = 'WEEKEND';
+        else if (d.getDay() === 5) type = 'FRIDAY'; // Simple check, EVE logic is in simulation. 
+        // We can't know EVE without full holiday check, but simple is fine for manual UI.
+
+        const seats = [];
+        for (let i = 0; i < slotsPerDay; i++) {
+            seats.push({ idx: i, pid: null, name: null, locked: false });
+        }
+        return { date: iso, type, seats };
+    });
+    renderResults(0); // This draws the empty table
+}
+
+window.getCombinedStats = function (pid) {
+    // 1. Get History Assignments
+    const h = (window.appData.history && window.appData.history[pid]) || { assignments: [], total: 0, hol: 0, sd: 0, fri: 0 };
+    const historyAssignments = h.assignments || []; // Should be array of {date, type}
+
+    // 2. Filter History: Exclude dates in current range
+    const start = window.appData.startDate;
+    const end = window.appData.endDate;
+    const validHistory = historyAssignments.filter(a => a.date < start || a.date > end);
+    // Note: This logic assumes simple string comparison works for ISO dates (it does).
+
+    // 3. Get Current Schedule Assignments
+    const currentAssignments = [];
+    if (window.appData.schedule) {
+        window.appData.schedule.forEach(day => {
+            day.seats.forEach(s => {
+                if (s.pid === pid) {
+                    currentAssignments.push({ date: day.date, type: day.type });
+                }
+            });
+        });
+    }
+
+    // 4. Merge
+    const merged = [...validHistory, ...currentAssignments];
+
+    // 5. Recalculate Stats for Combined
+    // Only rely on the list to ensure consistency (ignore h.total accumulator if we have list)
+    // If we have detailed assignments, recalculate from scratch. If not (legacy history), use accumulators.
+    let stats = { total: 0, hol: 0, sd: 0, fri: 0, assignments: merged };
+
+    if (historyAssignments.length > 0) {
+        // We have detail, recount everything from merged
+        merged.forEach(a => {
+            stats.total++;
+            if (a.type === 'HOLIDAY') stats.hol++;
+            else if (a.type === 'WEEKEND') stats.sd++;
+            else if (a.type === 'FRIDAY' || a.type === 'EVE') stats.fri++;
+        });
+    } else {
+        // Fallback for legacy history without details: Use h.accumulators (but we can't deduct overlap!)
+        // If legacy history has NO details, we can't deduce valid range.
+        // We assume legacy history does not overlap or we accept double counting.
+        // But the prompt implies we WILL have details from new export.
+        stats.total = h.total + currentAssignments.length;
+        // ... simple sum
+    }
+
+    // If we recalculated from detail, use that.
+    if (historyAssignments.length > 0) {
+        return stats;
+    }
+
+    // Fallback simple addition (recalling logic implies we want detail, but safety first)
+    let c = { t: 0, h: 0, s: 0, f: 0 };
+    currentAssignments.forEach(s => {
+        c.t++;
+        if (s.type === 'HOLIDAY') c.h++;
+        else if (s.type === 'WEEKEND') c.s++;
+        else if (s.type === 'FRIDAY' || s.type === 'EVE') c.f++;
+    });
+    return {
+        total: h.total + c.t,
+        hol: h.hol + c.h,
+        sd: h.sd + c.s,
+        fri: h.fri + c.f,
+        assignments: currentAssignments // Legacy fallback doesn't have history details
+    };
 }
 
 window.importHistory = function (el) {
@@ -210,25 +363,64 @@ window.importHistory = function (el) {
             if (!data.resumen_personal) throw new Error();
             if (!window.appData.history) window.appData.history = {};
             if (!window.appData.importedFiles) window.appData.importedFiles = [];
+            if (!window.appData.deletedIds) window.appData.deletedIds = [];
+
             const start = new Date(data.periodo.inicio);
             const end = new Date(data.periodo.fin);
             const monthsInFile = Math.max(1, (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) + 1);
+
             data.resumen_personal.forEach(p => {
                 const pid = p.id_persona || p.nombre;
-                if (!window.appData.history[pid]) window.appData.history[pid] = { name: p.nombre, months: 0, total: 0, hol: 0, sd: 0, fri: 0 };
+
+                // Smart Import: Add to active list if new and not deleted
+                const exists = window.appData.people.find(ap => ap.id === pid);
+                if (!exists && !window.appData.deletedIds.includes(pid)) {
+                    // Add new person without default limits
+                    window.appData.people.push({
+                        id: pid,
+                        name: p.nombre,
+                        min: '', max: '', doublets: false, blocked: [], suggested: []
+                    });
+                }
+
+                // Initialize history entry
+                if (!window.appData.history[pid]) {
+                    window.appData.history[pid] = {
+                        name: p.nombre,
+                        months: 0, total: 0, hol: 0, sd: 0, fri: 0,
+                        assignments: []
+                    };
+                }
                 const h = window.appData.history[pid];
+
+                // Store detailed assignments for deduplication
+                if (p.detalle_periodo) {
+                    if (!h.assignments) h.assignments = [];
+                    // Merge avoiding exact duplicates in history itself (if file re-imported?)
+                    p.detalle_periodo.forEach(newA => {
+                        // detail format: { fecha: "2026-01-01", tipo: "HOLIDAY" }
+                        // Map to internal: { date, type }
+                        const internalA = { date: newA.fecha, type: newA.tipo };
+                        if (!h.assignments.find(x => x.date === internalA.date)) {
+                            h.assignments.push(internalA);
+                        }
+                    });
+                }
+
+                // Legacy accumulators (keep updating just in case)
                 h.total += p.estadisticas.total_guardias;
                 h.hol += p.estadisticas.desglose.festivos;
                 h.sd += p.estadisticas.desglose.fin_de_semana;
                 h.fri += p.estadisticas.desglose.viernes_visperas;
                 h.months += monthsInFile;
             });
+
             window.appData.importedFiles.push(f.name);
             saveState();
             updateHistoryBadge();
             renderPeople();
             showToast('Historial importado correctamente', 'success');
-        } catch (err) { showToast('Error: Archivo no válido', 'error'); }
+        } catch (err) { console.error(err); showToast('Error: Archivo no válido', 'error'); }
     };
     r.readAsText(f);
     el.value = '';
@@ -315,67 +507,94 @@ window.downloadPDF = function (mode) {
         const [ey, em, ed] = window.appData.endDate.split('-').map(Number);
         const startDate = new Date(sy, sm - 1, sd);
         const endDate = new Date(ey, em - 1, ed);
-        const monthName = startDate.toLocaleString('es-ES', { month: 'long', year: 'numeric' }).toUpperCase();
 
-        doc.setFontSize(16);
-        if (mode === 'debug') doc.text(`AUDITORÍA DE BLOQUEOS - ${monthName}`, 14, 15);
-        else doc.text(`CALENDARIO DE GUARDIAS - ${monthName}`, 14, 15);
+        // Calculate months
+        let currentMonthStart = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+        const finalMonthStart = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
 
-        const weeks = [];
-        let currentWeek = new Array(7).fill(null);
+        let isFirstPage = true;
 
-        let iterDate = new Date(startDate);
-        let startDay = iterDate.getDay() - 1; if (startDay === -1) startDay = 6;
-        iterDate.setDate(iterDate.getDate() - startDay);
+        while (currentMonthStart <= finalMonthStart) {
+            if (!isFirstPage) doc.addPage();
+            isFirstPage = false;
 
-        while (iterDate <= endDate || currentWeek.some(d => d !== null)) {
-            let dayIdx = iterDate.getDay() - 1; if (dayIdx === -1) dayIdx = 6;
-            const iso = getISO(iterDate);
-            const inRange = (iterDate >= startDate && iterDate <= endDate);
+            const year = currentMonthStart.getFullYear();
+            const month = currentMonthStart.getMonth();
+            const monthName = currentMonthStart.toLocaleString('es-ES', { month: 'long', year: 'numeric' }).toUpperCase();
 
-            if (inRange) {
-                const dayNum = iterDate.getDate();
-                let content = `${dayNum}`;
+            // Define month range for this page
+            const monthEnd = new Date(year, month + 1, 0); // Last day of month
 
-                if (mode === 'debug') {
-                    const blocked = window.appData.people.filter(p => p.blocked.includes(iso)).map(p => p.name).join(', ');
-                    const suggested = window.appData.people.filter(p => p.suggested && p.suggested.includes(iso)).map(p => p.name).join(', ');
-                    if (suggested) content += `\n[SOL]: ${suggested}`;
-                    if (blocked) content += `\n[NO]: ${blocked}`;
-                    if (window.appData.holidays.includes(iso)) content += `\n(FESTIVO)`;
-                } else {
-                    const dayData = window.appData.schedule.find(s => s.date === iso);
-                    if (dayData && dayData.seats) {
-                        const assignedNames = dayData.seats.filter(s => s.pid).map(s => s.name || "?").join("\n");
-                        if (assignedNames) content += "\n" + assignedNames;
+            // Loop range for this page: Max(GlobalStart, MonthStart) -> Min(GlobalEnd, MonthEnd)
+            let iterDate = new Date(Math.max(startDate, currentMonthStart));
+
+            // Grid Alignment: Backtrack to Monday
+            let startDay = iterDate.getDay() - 1; if (startDay === -1) startDay = 6;
+            iterDate.setDate(iterDate.getDate() - startDay);
+
+            // We loop until we pass the end of this month segment AND finish the week
+            const loopEnd = new Date(Math.min(endDate, monthEnd));
+
+            doc.setFontSize(16);
+            if (mode === 'debug') doc.text(`AUDITORÍA - ${monthName}`, 14, 15);
+            else doc.text(`CALENDARIO - ${monthName}`, 14, 15);
+
+            const weeks = [];
+            let currentWeek = new Array(7).fill(null);
+            let working = true;
+
+            while (working) {
+                let dayIdx = iterDate.getDay() - 1; if (dayIdx === -1) dayIdx = 6;
+                const iso = getISO(iterDate);
+                // Check if this specific day is inside the desired range AND belongs to the current paginated month
+                const inRange = (iterDate >= startDate && iterDate <= endDate && iterDate.getMonth() === month);
+
+                if (inRange) {
+                    const dayNum = iterDate.getDate();
+                    let content = `${dayNum}`;
+
+                    if (mode === 'debug') {
+                        const blocked = window.appData.people.filter(p => p.blocked.includes(iso)).map(p => p.name).join(', ');
+                        const suggested = window.appData.people.filter(p => p.suggested && p.suggested.includes(iso)).map(p => p.name).join(', ');
+                        if (suggested) content += `\n[SOL]: ${suggested}`;
+                        if (blocked) content += `\n[NO]: ${blocked}`;
+                        if (window.appData.holidays.includes(iso)) content += `\n(FESTIVO)`;
+                    } else {
+                        const dayData = window.appData.schedule.find(s => s.date === iso);
+                        if (dayData && dayData.seats) {
+                            const assignedNames = dayData.seats.filter(s => s.pid).map(s => s.name || "?").join("\n");
+                            if (assignedNames) content += "\n" + assignedNames;
+                        }
                     }
+                    currentWeek[dayIdx] = content;
                 }
-                currentWeek[dayIdx] = content;
-            } else if (currentWeek.some(d => d !== null) || iterDate < startDate) {
-                if (iterDate >= startDate || currentWeek.length > 0) currentWeek[dayIdx] = "";
+
+                if (dayIdx === 6) {
+                    weeks.push(currentWeek);
+                    currentWeek = new Array(7).fill(null);
+                    if (iterDate >= loopEnd) working = false;
+                }
+                iterDate.setDate(iterDate.getDate() + 1);
             }
 
-            if (dayIdx === 6) {
-                weeks.push(currentWeek);
-                currentWeek = new Array(7).fill(null);
-                if (iterDate > endDate) break;
-            }
-            iterDate.setDate(iterDate.getDate() + 1);
+            doc.autoTable({
+                startY: 20,
+                head: [['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']],
+                body: weeks,
+                theme: 'grid',
+                styles: { minCellHeight: 25, fontSize: 8, valign: 'top', halign: 'center', lineWidth: 0.1 },
+                headStyles: { fillColor: mode === 'debug' ? [100, 100, 100] : [41, 128, 185], textColor: 255 },
+                columnStyles: { 5: { fillColor: [240, 240, 250] }, 6: { fillColor: [240, 240, 250] } }
+            });
+
+            // Move to next month
+            currentMonthStart.setMonth(currentMonthStart.getMonth() + 1);
         }
 
-        doc.autoTable({
-            startY: 20,
-            head: [['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']],
-            body: weeks,
-            theme: 'grid',
-            styles: { minCellHeight: 25, fontSize: 8, valign: 'top', halign: 'center', lineWidth: 0.1 },
-            headStyles: { fillColor: mode === 'debug' ? [100, 100, 100] : [41, 128, 185], textColor: 255 },
-            columnStyles: { 5: { fillColor: [240, 240, 250] }, 6: { fillColor: [240, 240, 250] } }
-        });
-
+        // Summary Page
         if (mode !== 'debug') {
             doc.addPage();
-            doc.text("Resumen Contable", 14, 20);
+            doc.text("Resumen Contable Total", 14, 20);
 
             const rows = [];
             const allIds = new Set(window.appData.people.map(p => p.id));
@@ -386,7 +605,7 @@ window.downloadPDF = function (mode) {
                 const h = (window.appData.history && window.appData.history[id]) || { total: 0, hol: 0, sd: 0, fri: 0, months: 0, name: activeP ? activeP.name : 'Unknown' };
                 let c = { t: 0, h: 0, s: 0, f: 0 };
 
-                // Aggregate new structure
+                // Aggregate
                 window.appData.schedule.forEach(day => {
                     day.seats.forEach(seat => {
                         if (seat.pid === id) {

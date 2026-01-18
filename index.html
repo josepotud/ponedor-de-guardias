@@ -113,15 +113,21 @@
                         <input type="number" id="newPersonMax" placeholder="Máx Guardias"
                             class="w-1/2 border p-2 rounded text-sm focus:ring-2 focus:ring-blue-200 outline-none">
                     </div>
-                    <div class="flex items-center justify-between pt-1">
+                    <div class="pt-1 flex justify-between items-center">
                         <label class="flex items-center cursor-pointer select-none">
                             <input type="checkbox" id="newPersonDoublets" class="h-4 w-4 text-blue-600 rounded">
                             <span class="ml-2 text-xs text-gray-600 font-medium">Acepta Dobletes</span>
                         </label>
-                        <button onclick="addPerson()"
-                            class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded text-xs font-bold uppercase tracking-wide transition shadow-sm">
-                            Añadir
-                        </button>
+                        <div class="flex gap-1">
+                            <button onclick="addPerson()"
+                                class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-bold uppercase tracking-wide transition shadow-sm">
+                                Añadir
+                            </button>
+                            <button onclick="openDraftModal()" title="Configurar (Borrador) antes de añadir"
+                                class="bg-gray-200 text-gray-600 hover:bg-gray-300 px-3 py-2 rounded text-sm transition shadow-sm">
+                                <i class="fas fa-calendar-alt"></i>
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div id="peopleList" class="space-y-2 max-h-[400px] overflow-y-auto pr-1"></div>
@@ -159,7 +165,7 @@
                             <i class="fas fa-file-pdf mr-1"></i> Calendario
                         </button>
                         <button onclick="downloadPDF('debug')"
-                            class="bg-gray-600 hover:bg-gray-700 text-white text-xs px-3 py-2 rounded font-bold transition shadow-sm flex items-center">
+                            class="hidden bg-gray-600 hover:bg-gray-700 text-white text-xs px-3 py-2 rounded font-bold transition shadow-sm flex items-center">
                             <i class="fas fa-bug mr-1"></i> Auditoría
                         </button>
                     </div>
@@ -350,6 +356,40 @@
             <div class="px-6 py-4 border-t flex justify-end bg-gray-50">
                 <button onclick="closeHistoryModal()"
                     class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 px-4 rounded">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Detail Modal (Spyglass) -->
+    <div id="statsModal"
+        class="fixed inset-0 bg-black bg-opacity-60 z-[60] hidden items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div class="px-6 py-4 border-b flex justify-between items-center bg-gray-50">
+                <h3 class="text-lg font-bold text-gray-800 flex items-center">
+                    <i class="fas fa-chart-pie text-blue-500 mr-2"></i>
+                    <span id="statsModalTitle">Detalle Estadísticas</span>
+                </h3>
+                <button onclick="closeStatsModal()" class="text-gray-400 hover:text-gray-600 transition">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+
+            <div class="p-6 overflow-y-auto bg-white flex-grow">
+                <!-- Averages Panel -->
+                <div id="statsAverages" class="mb-6 p-4 bg-white border border-gray-100 rounded-lg shadow-sm">
+                    <!-- Dynamic Averages -->
+                </div>
+
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 border-b pb-1">Desglose Mensual
+                    Assignments</h4>
+                <ul id="statsList" class="space-y-2">
+                    <!-- Dynamic List -->
+                </ul>
+            </div>
+
+            <div class="px-6 py-4 border-t bg-gray-50 flex justify-end">
+                <button onclick="closeStatsModal()"
+                    class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded shadow-sm text-sm">Cerrar</button>
             </div>
         </div>
     </div>

@@ -1,38 +1,56 @@
-# ponedor-de-guardias
-Gestor de Guardias Pro
+# Ponedor de Guardias
 
-Aplicación web autónoma para la gestión equitativa de turnos de guardia, diseñada para equipos médicos o de urgencias. Ahora refactorizada para mayor mantenibilidad y con reglas lógicas avanzadas.
+Automated Scheduling System for Healthcare Professionals.
 
-## Estructura de Archivos
-- `index.html`: Estructura principal.
-- `styles.css`: Estilos visuales.
-- `script.js`: Lógica del algoritmo y gestión de estado.
-- `guardiscopio_analysis.md`: Comparativa de funcionalidades.
+## Overview
+**Ponedor de Guardias** is a robust web-based tool designed to automate and optimize the scheduling of on-call shifts ("guardias"). It balances workload, respects individual preferences (blocked days, max shifts), and enforces strict rules regarding consecutive work days and rest periods.
 
-## Reglas del Algoritmo Implementadas
-*   **Fairness:** The algorithm strives for an equal number of shifts (+/- 1) per person.
-*   **Consecutive Shifts:**
-    *   **Default:** No consecutive shifts allowed.
-    *   **Doublets:** Users with 'doublets' permission can work max 2 consecutive days.
-    *   **Triplets:** Strictly forbidden.
-*   **Thursday Rule:** If you work Thursday, the system tries to avoid assigning you Saturday or Sunday of the same week (Strong Penalty).
-*   **Holidays:** Holidays falling on a Friday are treated as Holidays (High Priority), not regular Fridays.
-*   **Trash as Block:** Deleting an assignment via the trash icon automatically adds that date to the user's "Blocked" list for better visibility.
+## Features
+*   **Automated Generation**: Creates a full monthly schedule in seconds using a weighted priority algorithm.
+*   **Rules Engine**:
+    *   **Consecutive Ban**: Strictly forbids working two days in a row (e.g., Monday and Tuesday).
+    *   **Doublet Management**: Controls "Day-Gap-Day" patterns based on user preference ("Accepts Doublets").
+    *   **Quotas**: Enforces Minimum and Maximum shifts per person.
+*   **User Management**:
+    *   **Smart History**: Imports CSV/JSON history, deduplicates overlaps, and handles "Deleted" (Baja) users correctly.
+    *   **Detailed Stats (Spyglass)**: Inspect specific assignment dates per person (aggregated by month).
+    *   **Manual Control**: Edit min/max/doublets anytime.
+*   **Visual Interface**:
+    *   **Interactive Calendar**: Initialize empty, then click to assign manually (with Lock/Block logic).
+    *   **Exceptions & Holidays**: Mark specific staffing needs (blue) or holidays (orange) directly on the grid.
+    *   **Real-time Feedback**: Visual warnings for rule violations.
+*   **Reporting**:
+    *   **PDF Export**: Generates professional, monthly-paginated calendars and accounting summaries.
+    *   **JSON Import/Export**: Backup and restore state, or export usage data.
 
-## Structure
-The project is now modularized:
-*   `index.html`: Main entry point.
-*   `css/`: Stylesheets.
-*   `js/`: JavaScript modules (`state.js`, `algorithm.js`, `ui.js`, `main.js`).
-*   `data/`: Configuration and scenario files.
-*   `docs/`: Documentation and analysis.md
+## Installation & Usage
+No backend server is required. The application runs entirely in the browser.
 
-## Uso
-1. Abrir `index.html` en cualquier navegador moderno (Chrome, Edge, Firefox).
-2. Configurar fechas de inicio y fin.
-3. Añadir personal y configurar sus restricciones (bloqueos/peticiones) y si aceptan dobletes.
-4. Pulsar "Generar Todo" para un calendario nuevo, o "Rellenar Huecos" para completar uno existente.
-5. Revisar la tabla y descargar el PDF o guardar el JSON.
+1.  **Open**: Double-click `index.html` to launch the application in your web browser.
+2.  **Configure**:
+    *   Set the **Start Date** and **End Date** for the schedule.
+    *   Add **People** or Import History (new users imported with empty Min/Max by default).
+    *   Define **Holidays** and **Exceptions** using the buttons under configuration.
+3.  **Prepare**:
+    *   (Optional) Click empty slots in the calendar to manually assign people *before* generating.
+    *   These manual assignments are **Locked**. Deleting them **Blocks** the person for that day.
+4.  **Generate**: Click "Generar Todo" to run the algorithm from scratch, or "Rellenar Huecos" to respect existing/locked slots.
+5.  **Refine**:
+    *   Use the trash icon to clear slots.
+    *   Use the "Spyglass" icon in the results table to audit specific assignments.
+6.  **Export**: Click "Descargar PDF" to save the final schedule.
 
-## Análisis de Competencia
-Ver `guardiscopio_analysis.md` para un resumen de funcionalidades avanzadas no implementadas todavía.
+## Tech Stack
+*   **Frontend**: HTML5, JavaScript (ES6+)
+*   **Styling**: Tailwind CSS (CDN)
+*   **Icons**: Font Awesome
+*   **Libraries**:
+    *   `SweetAlert2` (Modals/Alerts)
+    *   `jsPDF` & `jspdf-autotable` (PDF Generation)
+
+## Project Structure
+*   `index.html`: Main application entry point.
+*   `js/main.js`: Core application logic, event handlers, and export functions.
+*   `js/algorithm.js`: The scheduling engine (simulation, validation, gap filling).
+*   `js/ui.js`: DOM manipulation, rendering, and modal management.
+*   `docs/`: Detailed documentation files.
