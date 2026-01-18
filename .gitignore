@@ -1,2 +1,8 @@
 guardiscopio_analysis.md
 update_plan
+scenario_complex.json
+scenario_comprehensive_error.json
+scenario_consecutive.json
+scenario_doublets.json
+scenario_friday_holiday.json
+*.json
