@@ -14,11 +14,13 @@ Automated Scheduling System for Healthcare Professionals.
 *   **User Management**:
     *   **Smart History**: Imports CSV/JSON history, deduplicates overlaps, and handles "Deleted" (Baja) users correctly.
     *   **Detailed Stats (Spyglass)**: Inspect specific assignment dates per person (aggregated by month).
+    *   **Smart Sidebar**: View "Blocked Days" and "Preferences" counts directly in the person list.
     *   **Manual Control**: Edit min/max/doublets anytime.
 *   **Visual Interface**:
     *   **Interactive Calendar**: Initialize empty, then click to assign manually (with Lock/Block logic).
+    *   **Dynamic Updates**: Adjust start/end dates on the fly. The system smartly merges existing assignments or resets the schedule based on your choice.
     *   **Exceptions & Holidays**: Mark specific staffing needs (blue) or holidays (orange) directly on the grid.
-    *   **Real-time Feedback**: Visual warnings for rule violations.
+    *   **Real-time Feedback**: Visual warnings for rule violations and immediate "Unassigned Slots" alert updates.
 *   **Reporting**:
     *   **PDF Export**: Generates professional, monthly-paginated calendars and accounting summaries.
     *   **JSON Import/Export**: Backup and restore state, or export usage data.

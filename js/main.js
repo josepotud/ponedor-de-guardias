@@ -16,28 +16,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Date Validation & Auto-Init Logic
     if (startEl && endEl) {
-        startEl.addEventListener('change', () => {
-            if (startEl.value > endEl.value && endEl.value) {
-                endEl.value = startEl.value;
-            }
-            saveStateInputs();
-            if (!window.appData.schedule || window.appData.schedule.length === 0 || confirm("¿Cambiar fechas y reiniciar calendario?")) {
-                window.appData.startDate = startEl.value;
-                window.appData.endDate = endEl.value;
-                initializeEmptySchedule();
-            }
-        });
-        endEl.addEventListener('change', () => {
-            if (endEl.value < startEl.value && startEl.value) {
-                startEl.value = endEl.value;
-            }
-            saveStateInputs();
-            if (!window.appData.schedule || window.appData.schedule.length === 0 || confirm("¿Cambiar fechas y reiniciar calendario?")) {
-                window.appData.startDate = startEl.value;
-                window.appData.endDate = endEl.value;
-                initializeEmptySchedule();
-            }
-        });
+        startEl.addEventListener('change', () => handleDateChange('start'));
+        endEl.addEventListener('change', () => handleDateChange('end'));
     }
 
     if (startEl) startEl.value = window.appData.startDate;
@@ -60,11 +40,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Check loaded schedule for alerts OR Init empty
     if (window.appData.schedule && window.appData.schedule.length > 0) {
-        let unassignedCount = 0;
-        window.appData.schedule.forEach(day => {
-            day.seats.forEach(s => { if (!s.pid) unassignedCount++; });
-        });
-        renderResults(unassignedCount);
+        updateData(true); // Initial load update
     } else {
         // Init empty on load if nothing exists
         initializeEmptySchedule();
@@ -74,6 +50,24 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.target === this) closeModal();
     });
 });
+
+window.updateData = function (skipSave) {
+    if (!skipSave) saveState();
+
+    // Recalculate Unassigned
+    let unassignedCount = 0;
+    if (window.appData.schedule) {
+        window.appData.schedule.forEach(day => {
+            day.seats.forEach(s => { if (!s.pid) unassignedCount++; });
+        });
+    }
+
+    renderPeople();
+    if (window.appData.schedule && window.appData.schedule.length > 0) {
+        renderResults(unassignedCount);
+    }
+    updateHistoryBadge();
+}
 
 window.startGeneration = function (preserveExisting) {
     if (!window.appData.people.length) return Swal.fire('Error', 'Sin personal', 'error');
@@ -152,21 +146,20 @@ window.clearSlot = function (dateIso, seatIdx) {
         if (pid) {
             const p = window.appData.people.find(x => x.id === pid);
             if (p) {
-                // Restore auto-block on removal (User Request)
+                // Restore auto-block (User Request)
                 if (!p.blocked.includes(dateIso)) {
                     p.blocked.push(dateIso);
                     if (p.suggested) p.suggested = p.suggested.filter(d => d !== dateIso);
                 }
             }
 
+            const slot = day.seats[seatIdx];
             slot.pid = null;
             slot.name = null;
-            slot.locked = false; // Ensure padlock is removed from empty slot
-            saveState();
-            renderResults(0);
-            renderPeople(); // Re-render people to show new blocked status count?
-            const dateStr = dateIso.split('-').reverse().join('/');
-            showToast(`Guardia borrada y día bloqueado para ${p.name}`, 'warning');
+            slot.locked = false;
+
+            updateData();
+            showToast(`Guardia eliminada y día bloqueado`, 'info');
         }
     }
 }
@@ -249,8 +242,8 @@ window.applyManualAssign = function (dayIdx, seatIdx, pid) {
     targetToken.name = p.name;
     // Lock it so fillGaps doesn't move it
     targetToken.locked = true;
-    saveState();
-    renderResults(0);
+
+    updateData(); // Centralized update for alerts
     showToast(`Asignado: ${p.name} -> ${day.date}`, 'success');
 }
 
@@ -258,19 +251,18 @@ window.initializeEmptySchedule = function () {
     // Only if no schedule or confirm? For now, we do it if empty.
     // Or if dates change, we effectively reset.
     // Let's generate the structure without assigning.
-    const dates = getDatesRange(window.appData.startDate, window.appData.endDate);
-    const slotsPerDay = parseInt(document.getElementById('defaultSlots').value) || 2;
-    // Keep existing manual assignments if possible? Too complex for first iteration.
-    // User requested "appears empty".
-
     // We strictly rebuild structure.
+    // We strictly rebuild structure.
+    // Fixed: getDatesRange returns Date objects, we need ISO strings.
+    const dates = getDatesRange(window.appData.startDate, window.appData.endDate).map(d => getISO(d));
+    const slotsPerDay = parseInt(document.getElementById('defaultSlots').value) || 2;
+
     window.appData.schedule = dates.map(iso => {
         const d = new Date(iso);
         let type = 'NORMAL';
         if (window.appData.holidays.includes(iso)) type = 'HOLIDAY';
         else if (d.getDay() === 0 || d.getDay() === 6) type = 'WEEKEND';
-        else if (d.getDay() === 5) type = 'FRIDAY'; // Simple check, EVE logic is in simulation. 
-        // We can't know EVE without full holiday check, but simple is fine for manual UI.
+        else if (d.getDay() === 5) type = 'FRIDAY'; // Simple check
 
         const seats = [];
         for (let i = 0; i < slotsPerDay; i++) {
@@ -278,7 +270,7 @@ window.initializeEmptySchedule = function () {
         }
         return { date: iso, type, seats };
     });
-    renderResults(0); // This draws the empty table
+    updateData();
 }
 
 window.getCombinedStats = function (pid) {
@@ -658,4 +650,100 @@ window.downloadPDF = function (mode) {
     } else {
         runDownload();
     }
+}
+
+window.handleDateChange = function (source) {
+    const startEl = document.getElementById('startDate');
+    const endEl = document.getElementById('endDate');
+
+    // Auto-correct order
+    if (source === 'start' && startEl.value > endEl.value && endEl.value) {
+        endEl.value = startEl.value;
+    } else if (source === 'end' && endEl.value < startEl.value && startEl.value) {
+        startEl.value = endEl.value;
+    }
+
+    const newStart = startEl.value;
+    const newEnd = endEl.value;
+    const oldStart = window.appData.startDate;
+    const oldEnd = window.appData.endDate;
+
+    if (newStart === oldStart && newEnd === oldEnd) return;
+
+    // Check assignments
+    let hasAssignments = false;
+    if (window.appData.schedule) {
+        hasAssignments = window.appData.schedule.some(d => d.seats.some(s => s.pid));
+    }
+
+    if (!hasAssignments) {
+        window.appData.startDate = newStart;
+        window.appData.endDate = newEnd;
+        saveStateInputs();
+        initializeEmptySchedule();
+        return;
+    }
+
+    Swal.fire({
+        title: 'Modificación de Fechas',
+        text: "¿Cómo quieres gestionar las guardias ya asignadas?",
+        icon: 'question',
+        showDenyButton: true,
+        showCancelButton: true,
+        confirmButtonText: 'Mantener (Coincidencias)',
+        denyButtonText: 'Borrar todo',
+        cancelButtonText: 'Cancelar cambio'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            // Keep
+            window.appData.startDate = newStart;
+            window.appData.endDate = newEnd;
+            saveStateInputs();
+            rebuildScheduleWithMerge();
+        } else if (result.isDenied) {
+            // Reset
+            window.appData.startDate = newStart;
+            window.appData.endDate = newEnd;
+            saveStateInputs();
+            initializeEmptySchedule();
+        } else {
+            // Cancel - Revert inputs
+            startEl.value = oldStart;
+            endEl.value = oldEnd;
+        }
+    });
+}
+
+window.rebuildScheduleWithMerge = function () {
+    const oldSchedule = window.appData.schedule;
+    const dates = getDatesRange(window.appData.startDate, window.appData.endDate).map(d => getISO(d));
+    const slotsPerDay = parseInt(document.getElementById('defaultSlots').value) || 2;
+
+    const newSchedule = dates.map(iso => {
+        const d = new Date(iso);
+        let type = 'NORMAL';
+        if (window.appData.holidays.includes(iso)) type = 'HOLIDAY';
+        else if (d.getDay() === 0 || d.getDay() === 6) type = 'WEEKEND';
+        else if (d.getDay() === 5) type = 'FRIDAY';
+
+        const oldDay = oldSchedule.find(od => od.date === iso);
+
+        const seats = [];
+        for (let i = 0; i < slotsPerDay; i++) {
+            let seat = { idx: i, pid: null, name: null, locked: false };
+
+            // Merge Logic: Resize if needed
+            if (oldDay && oldDay.seats[i] && oldDay.seats[i].pid) {
+                seat.pid = oldDay.seats[i].pid;
+                seat.name = oldDay.seats[i].name;
+                seat.locked = oldDay.seats[i].locked;
+            }
+            seats.push(seat);
+        }
+        return { date: iso, type, seats };
+    });
+
+    window.appData.schedule = newSchedule;
+    updateData(); // centralized update
+    showToast('Calendario actualizado manteniendo coincidencias', 'success');
 }

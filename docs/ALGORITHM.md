@@ -59,6 +59,10 @@ When running in this mode (`startGeneration(true)`):
     *   Slots that were **Manually Assigned** (by clicking) retain their `locked: true` status (visible padlock).
     *   Slots that were previously generated are preserved but treated as `locked: false` visually (though effectively fixed for this run).
 3.  **New Assignments**: The algorithm only fills the remaining empty slots (`unassigned`).
+4.  **Dynamic Date Merge**: When changing dates with "Mantener" option:
+    *   The system iterates the new date range.
+    *   If a day existed in the old schedule, its assignments (pid, name, lock status) are copied to the new schedule.
+    *   If the number of slots changes (`defaultSlots`), the system attempts to map existing indices `0..N`.
 
 ## 4. Manual Intervention Logic
 *   **Manual Assignment**: Clicking an empty slot assigns a user and sets `locked: true`. This slot is immune to the algorithm.

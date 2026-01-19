@@ -2,6 +2,7 @@
 
 let currentPersonId = null;
 let modalMode = 'person'; // 'person', 'holiday', 'draft'
+let currentCalendarDate = new Date(); // State for calendar pagination
 
 // --- People Management ---
 window.renderPeople = function () {
@@ -13,7 +14,10 @@ window.renderPeople = function () {
         div.innerHTML = `
             <div>
                 <p class="font-bold text-gray-800">${p.name}</p>
-                <p class="text-xs text-gray-500">Min: ${p.min} | Max: ${p.max} | Dobletes: ${p.doublets ? 'Si' : 'No'}</p>
+                <p class="text-xs text-gray-500">
+                    Min: ${p.min} | Max: ${p.max} | Dobletes: ${p.doublets ? 'Si' : 'No'} <br>
+                    Bloqueos: ${p.blocked.length} | Pref: ${p.suggested ? p.suggested.length : 0}
+                </p>
             </div>
             <div class="flex gap-2">
                 <button onclick="openEditPersonModal('${p.id}')" class="text-gray-500 hover:text-gray-700 transition" title="Editar"><i class="fas fa-edit"></i></button>
@@ -48,8 +52,8 @@ window.addPerson = function () {
     window.appData.people.push({
         id: newId,
         name,
-        min: parseInt(minInput.value) || 1,
-        max: parseInt(maxInput.value) || 5,
+        min: minInput.value ? parseInt(minInput.value) : "", // Empty if not provided
+        max: maxInput.value ? parseInt(maxInput.value) : "", // Empty if not provided
         doublets: doubletsInput.checked,
         blocked: [...draft.blocked],
         suggested: [...draft.suggested]
@@ -129,6 +133,15 @@ window.openHolidaysModal = function () {
 }
 
 function openModal() {
+    // Initialize calendar date to start of configured range OR current date
+    if (window.appData.startDate) {
+        const [sy, sm, sd] = window.appData.startDate.split('-').map(Number);
+        currentCalendarDate = new Date(sy, sm - 1, 1); // Local 1st day of start month
+    } else {
+        currentCalendarDate = new Date();
+        currentCalendarDate.setDate(1);
+    }
+
     const m = document.getElementById('calendarModal');
     m.classList.remove('hidden');
     m.classList.add('flex');
@@ -177,8 +190,8 @@ window.saveEditPerson = function () {
         p.min = parseInt(min) || 0;
         p.max = parseInt(max) || 0;
         p.doublets = doublets;
-        saveState();
-        renderPeople();
+        p.doublets = doublets;
+        updateData();
         showToast('Cambios guardados', 'success');
         closeEditPersonModal();
     }
@@ -189,6 +202,15 @@ window.openHolidayModal = function () {
     document.getElementById('modalTitle').innerText = 'Gestor de Festivos';
     document.getElementById('personModalControls').classList.add('hidden');
     document.getElementById('staffingControls').classList.add('hidden');
+
+    // Initialize date correctly
+    if (window.appData.startDate) {
+        const [sy, sm, sd] = window.appData.startDate.split('-').map(Number);
+        currentCalendarDate = new Date(sy, sm - 1, 1);
+    } else {
+        currentCalendarDate = new Date();
+        currentCalendarDate.setDate(1);
+    }
 
     document.getElementById('calendarModal').classList.remove('hidden');
     document.getElementById('calendarModal').classList.add('flex');
@@ -201,20 +223,61 @@ window.openStaffingModal = function () {
     document.getElementById('personModalControls').classList.add('hidden');
     document.getElementById('staffingControls').classList.remove('hidden');
 
+    // Initialize date correctly
+    if (window.appData.startDate) {
+        const [sy, sm, sd] = window.appData.startDate.split('-').map(Number);
+        currentCalendarDate = new Date(sy, sm - 1, 1);
+    } else {
+        currentCalendarDate = new Date();
+        currentCalendarDate.setDate(1);
+    }
+
     document.getElementById('calendarModal').classList.remove('hidden');
     document.getElementById('calendarModal').classList.add('flex');
+    renderCalendar();
+}
+
+window.changeMonth = function (delta) {
+    // Modify currentCalendarDate
+    currentCalendarDate.setMonth(currentCalendarDate.getMonth() + delta);
     renderCalendar();
 }
 
 window.renderCalendar = function () {
     const grid = document.getElementById('calendarGrid');
     grid.innerHTML = '';
+    const monthLabel = document.getElementById('monthLabel');
 
-    const start = new Date(window.appData.startDate);
-    const end = new Date(window.appData.endDate);
-    if (isNaN(start) || isNaN(end)) {
-        grid.innerHTML = '<p class="text-red-500">Fechas inválidas</p>';
-        return;
+    if (!currentCalendarDate) currentCalendarDate = new Date(window.appData.startDate || Date.now());
+
+    // Update Header
+    const monthName = currentCalendarDate.toLocaleString('es-ES', { month: 'long', year: 'numeric' });
+    monthLabel.innerText = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+
+    // Get Grid Info
+    const year = currentCalendarDate.getFullYear();
+    const month = currentCalendarDate.getMonth(); // 0-11
+
+    const firstDayOfMonth = new Date(year, month, 1);
+    const lastDayOfMonth = new Date(year, month + 1, 0);
+
+    // Padding for start of month (Monday based: Mon=0, Sun=6 in logical grid, but JS GetDay is Sun=0)
+    // We want Monday (1) -> Col 0. Sunday (0) -> Col 6.
+    let startCol = firstDayOfMonth.getDay() - 1;
+    if (startCol === -1) startCol = 6;
+
+    // determine full valid range for coloring checks
+    // determine full valid range for coloring checks (Local Midnight Normalized)
+    const [gsy, gsm, gsd] = window.appData.startDate.split('-').map(Number);
+    const [gey, gem, ged] = window.appData.endDate.split('-').map(Number);
+    const globalStart = new Date(gsy, gsm - 1, gsd);
+    const globalEnd = new Date(gey, gem - 1, ged);
+
+    // Fill Padding
+    for (let i = 0; i < startCol; i++) {
+        const div = document.createElement('div');
+        div.className = "bg-transparent"; // Empty slot
+        grid.appendChild(div);
     }
 
     // Determine target data
@@ -228,85 +291,90 @@ window.renderCalendar = function () {
         suggestedArr = window.draftPerson.suggested;
     }
 
-    // Use local helper for strings
-    const days = getStringDatesRange(window.appData.startDate, window.appData.endDate);
-
-    days.forEach(iso => {
-        const d = new Date(iso);
+    // Render Days
+    for (let d = 1; d <= lastDayOfMonth.getDate(); d++) {
+        const currentDate = new Date(year, month, d);
+        // Use getISO helper to avoid timezone shifts (toISOString uses UTC, new Date(y,m,d) uses Local)
+        const iso = window.getISO ? window.getISO(currentDate) : currentDate.toISOString().split('T')[0];
         const dayDiv = document.createElement('div');
+        dayDiv.innerText = d;
 
-        // Styles
-        let cls = "bg-white border border-gray-100 text-gray-700 hover:bg-gray-50 cursor-pointer";
-        let label = d.getDate();
-
-        // Visual Override Priorities
-        if (modalMode === 'holiday') {
-            if (holidaysArr.includes(iso)) cls = "bg-orange-100 border-orange-300 text-orange-800 font-bold";
-        } else if (modalMode === 'staffing') {
-            const custom = window.appData.staffing[iso];
-            if (custom !== undefined) {
-                cls = "bg-blue-100 border-blue-300 text-blue-800 font-bold";
-                label += ` [${custom}]`;
-            }
+        // Base Check range
+        if (currentDate < globalStart || currentDate > globalEnd) {
+            dayDiv.className = "p-2 rounded text-center text-sm text-gray-300 cursor-not-allowed";
         } else {
-            // Person/Draft Mode
-            if (holidaysArr.includes(iso)) cls = "bg-orange-50 text-orange-400"; // Background holiday indicator
+            // Styles
+            let cls = "bg-white border border-gray-100 text-gray-700 hover:bg-gray-50 cursor-pointer";
+            let label = d;
 
-            if (blockedArr.includes(iso)) cls = "bg-red-100 border-red-300 text-red-800 font-bold";
-            else if (suggestedArr.includes(iso)) cls = "bg-green-100 border-green-300 text-green-800 font-bold";
-        }
-
-        // Weekend styling (subtle)
-        if (d.getDay() === 0 || d.getDay() === 6) {
-            if (!cls.includes('bg-')) cls += " bg-gray-50";
-        }
-
-        dayDiv.className = `p-2 rounded text-center text-sm transition select-none ${cls}`;
-        dayDiv.innerText = label;
-
-        dayDiv.onclick = () => {
+            // Visual Override Priorities
             if (modalMode === 'holiday') {
-                toggleHoliday(iso);
+                if (holidaysArr.includes(iso)) cls = "bg-orange-100 border-orange-300 text-orange-800 font-bold";
             } else if (modalMode === 'staffing') {
-                const count = parseInt(document.getElementById('modalStaffingCount').value) || 0;
-                window.appData.staffing[iso] = count;
-                renderCalendar();
-            } else {
-                // Toggle Block/Suggest
-                const action = document.querySelector('input[name="dayAction"]:checked').value || 'block';
-                // Helpers to modify arrays
-                const modifyState = (targetObj) => {
-                    const blk = targetObj.blocked;
-                    const sug = targetObj.suggested;
-
-                    if (action === 'block') {
-                        if (blk.includes(iso)) blk.splice(blk.indexOf(iso), 1);
-                        else {
-                            if (sug.includes(iso)) sug.splice(sug.indexOf(iso), 1);
-                            blk.push(iso);
-                        }
-                    } else { // suggest
-                        if (sug.includes(iso)) sug.splice(sug.indexOf(iso), 1);
-                        else {
-                            if (blk.includes(iso)) blk.splice(blk.indexOf(iso), 1);
-                            sug.push(iso);
-                        }
-                    }
-                };
-
-                if (modalMode === 'person' && currentPersonId) {
-                    const p = window.appData.people.find(x => x.id === currentPersonId);
-                    if (p) modifyState(p);
-                } else if (modalMode === 'draft') {
-                    if (!window.draftPerson) window.draftPerson = { blocked: [], suggested: [] };
-                    modifyState(window.draftPerson);
+                const custom = window.appData.staffing[iso];
+                if (custom !== undefined) {
+                    cls = "bg-blue-100 border-blue-300 text-blue-800 font-bold";
+                    label += ` [${custom}]`;
+                    dayDiv.innerText = label;
                 }
-            }
-            renderCalendar();
-        };
+            } else {
+                // Person/Draft Mode
+                if (holidaysArr.includes(iso)) cls = "bg-orange-50 text-orange-400"; // Background holiday indicator
 
+                if (blockedArr.includes(iso)) cls = "bg-red-100 border-red-300 text-red-800 font-bold";
+                else if (suggestedArr.includes(iso)) cls = "bg-green-100 border-green-300 text-green-800 font-bold";
+            }
+
+            // Weekend styling (subtle)
+            if (currentDate.getDay() === 0 || currentDate.getDay() === 6) {
+                if (!cls.includes('bg-')) cls += " bg-gray-50";
+            }
+
+            dayDiv.className = `p-2 rounded text-center text-sm transition select-none ${cls}`;
+
+            dayDiv.onclick = () => {
+                if (modalMode === 'holiday') {
+                    toggleHoliday(iso);
+                } else if (modalMode === 'staffing') {
+                    const count = parseInt(document.getElementById('modalStaffingCount').value) || 0;
+                    window.appData.staffing[iso] = count;
+                    renderCalendar();
+                } else {
+                    // Toggle Block/Suggest
+                    const action = document.querySelector('input[name="dayAction"]:checked').value || 'block';
+                    // Helpers to modify arrays
+                    const modifyState = (targetObj) => {
+                        const blk = targetObj.blocked;
+                        const sug = targetObj.suggested;
+
+                        if (action === 'block') {
+                            if (blk.includes(iso)) blk.splice(blk.indexOf(iso), 1);
+                            else {
+                                if (sug.includes(iso)) sug.splice(sug.indexOf(iso), 1);
+                                blk.push(iso);
+                            }
+                        } else { // suggest
+                            if (sug.includes(iso)) sug.splice(sug.indexOf(iso), 1);
+                            else {
+                                if (blk.includes(iso)) blk.splice(blk.indexOf(iso), 1);
+                                sug.push(iso);
+                            }
+                        }
+                    };
+
+                    if (modalMode === 'person' && currentPersonId) {
+                        const p = window.appData.people.find(x => x.id === currentPersonId);
+                        if (p) modifyState(p);
+                    } else if (modalMode === 'draft') {
+                        if (!window.draftPerson) window.draftPerson = { blocked: [], suggested: [] };
+                        modifyState(window.draftPerson);
+                    }
+                }
+                renderCalendar();
+            };
+        }
         grid.appendChild(dayDiv);
-    });
+    }
 }
 
 function toggleHoliday(iso) {
@@ -387,8 +455,11 @@ window.renderResults = function (unassigned) {
                 errorHtml = `<div class="text-xs text-red-600 font-bold mt-1"><i class="fas fa-exclamation-triangle"></i> ${errors[errKey]}</div>`;
             }
 
+            const dateObj = new Date(y, m - 1, d);
+            const dateStr = dateObj.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+
             tr.innerHTML = `
-                <td class="px-6 py-2 ${showDate ? '' : 'text-transparent select-none'}">${d}/${m}</td>
+                <td class="px-6 py-2 ${showDate ? '' : 'text-transparent select-none'} font-mono uppercase">${dateStr}</td>
                 <td class="px-6 py-2 ${cls} ${showDate ? '' : 'text-transparent select-none'}">${getDayName(day.date)}</td>
                 <td class="${errorClass}">
                      <div class="font-bold ${seat.pid ? '' : 'text-red-500'} ${assignClass}" ${assignClick}>
