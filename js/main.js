@@ -1,4 +1,67 @@
 // --- MAIN ---
+function bindClick(id, handler) {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('click', handler);
+}
+
+function bindChange(id, handler) {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', handler);
+}
+
+function bindStaticUiEvents() {
+    bindClick('viewHistoryBtn', () => window.openHistoryModal());
+    bindClick('importHistoryBtn', () => document.getElementById('historyInput')?.click());
+    bindChange('historyInput', (event) => window.importHistory(event.target));
+
+    bindClick('exportDataBtn', () => window.exportData());
+    bindClick('triggerImportBtn', () => window.triggerImport());
+    bindChange('fileInput', (event) => window.importData(event.target));
+    bindClick('resetDataBtn', () => window.resetData());
+
+    bindClick('openHolidayModalBtn', () => window.openHolidayModal());
+    bindClick('openStaffingModalBtn', () => window.openStaffingModal());
+    bindClick('addPersonBtn', () => window.addPerson());
+    bindClick('openDraftModalBtn', () => window.openDraftModal());
+    bindClick('generateAllBtn', () => window.startGeneration(false));
+    bindClick('fillGapsBtn', () => window.startGeneration(true));
+
+    bindClick('downloadReportJsonBtn', () => window.downloadReportJSON());
+    bindClick('downloadSchedulePdfBtn', () => window.downloadPDF('schedule'));
+    bindClick('downloadExcelBtn', () => window.downloadExcel());
+    bindClick('downloadDebugPdfBtn', () => window.downloadPDF('debug'));
+
+    bindClick('closeCalendarModalIconBtn', () => window.closeModal());
+    bindClick('closeCalendarModalBtn', () => window.closeModal());
+    bindClick('calendarPrevMonthBtn', () => window.changeMonth(-1));
+    bindClick('calendarNextMonthBtn', () => window.changeMonth(1));
+
+    bindClick('closeEditPersonModalIconBtn', () => window.closeEditPersonModal());
+    bindClick('closeEditPersonModalBtn', () => window.closeEditPersonModal());
+    bindClick('saveEditPersonBtn', () => window.saveEditPerson());
+
+    bindClick('closeHistoryModalIconBtn', () => window.closeHistoryModal());
+    bindClick('closeHistoryModalBtn', () => window.closeHistoryModal());
+    bindClick('closeStatsModalIconBtn', () => window.closeStatsModal());
+    bindClick('closeStatsModalBtn', () => window.closeStatsModal());
+
+    document.querySelectorAll('input[name="dayAction"]').forEach((radio) => {
+        radio.addEventListener('change', () => window.renderCalendar());
+    });
+
+    const calendarModal = document.getElementById('calendarModal');
+    if (calendarModal) {
+        calendarModal.addEventListener('click', function (e) {
+            if (e.target === this) closeModal();
+        });
+    }
+
+    const calendarModalContent = document.getElementById('calendarModalContent');
+    if (calendarModalContent) {
+        calendarModalContent.addEventListener('click', (event) => event.stopPropagation());
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     loadState();
     if (!window.appData.startDate) {
@@ -14,10 +77,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const endEl = document.getElementById('endDate');
     const slotsEl = document.getElementById('defaultSlots');
 
+    bindStaticUiEvents();
+
     // Date Validation & Auto-Init Logic
     if (startEl && endEl) {
         startEl.addEventListener('change', () => handleDateChange('start'));
         endEl.addEventListener('change', () => handleDateChange('end'));
+    }
+    if (slotsEl) {
+        slotsEl.addEventListener('change', () => saveStateInputs());
     }
 
     if (startEl) startEl.value = window.appData.startDate;
@@ -45,10 +113,6 @@ document.addEventListener('DOMContentLoaded', () => {
         // Init empty on load if nothing exists
         initializeEmptySchedule();
     }
-
-    document.getElementById('calendarModal').addEventListener('click', function (e) {
-        if (e.target === this) closeModal();
-    });
 });
 
 window.updateData = function (skipSave) {
@@ -748,6 +812,57 @@ window.rebuildScheduleWithMerge = function () {
     showToast('Calendario actualizado manteniendo coincidencias', 'success');
 }
 
+function getExcelDaySummary(dayData) {
+    const totalSlots = dayData && dayData.seats ? dayData.seats.length : 0;
+    const assignedSlots = dayData && dayData.seats ? dayData.seats.filter((seat) => seat.pid !== null).length : 0;
+    return {
+        totalSlots,
+        freeSlots: totalSlots - assignedSlots
+    };
+}
+
+function getExcelDayTypeLabel(isoStr, fallbackDate) {
+    if (window.appData.holidays && window.appData.holidays.includes(isoStr)) return 'festivo';
+
+    const tomorrow = new Date(fallbackDate);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    if (window.appData.holidays && window.appData.holidays.includes(getISO(tomorrow))) return 'vispera';
+
+    if (fallbackDate.getDay() === 0 || fallbackDate.getDay() === 6) return 'weekend';
+    return 'weekday';
+}
+
+function getExcelAvailabilityStatus(person, dayData, dayIndex) {
+    if (!dayData) return 'none';
+
+    const assignedCount = dayData.seats.filter((seat) => seat.pid === person.id).length;
+    if (assignedCount > 0) return 'assigned';
+    if (person.blocked.includes(dayData.date)) return 'blocked';
+    if (person.suggested && person.suggested.includes(dayData.date)) return 'suggested';
+    if (!window.isValidAssignment(person.id, dayIndex, null, window.appData.schedule, person.doublets)) return 'unavailable';
+    return 'none';
+}
+
+function applyExcelCellState(cell, status, isWeekend) {
+    const fillByStatus = {
+        assigned: 'FFBFDBFE',
+        blocked: 'FFFECACA',
+        suggested: 'FFBBF7D0',
+        unavailable: 'FFFDE68A',
+        weekend: 'FFF3F4F6'
+    };
+
+    const targetStatus = status === 'none' && isWeekend ? 'weekend' : status;
+    const bgColor = fillByStatus[targetStatus];
+    if (!bgColor) return;
+
+    cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: bgColor }
+    };
+}
+
 window.downloadExcel = async function () {
     if (!window.appData.schedule || window.appData.schedule.length === 0) {
         Swal.fire('Atención', 'No hay datos generados para exportar', 'warning');
@@ -874,7 +989,7 @@ window.downloadExcel = async function () {
         }
         
         sheet.addRow(rowHuecos);
-        sheet.addRow(rowTipo);
+        // sheet.addRow(rowTipo);
         
         sheet.eachRow((row, rowNumber) => {
             row.eachCell((cell) => {
@@ -885,6 +1000,118 @@ window.downloadExcel = async function () {
         });
     });
     
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Guardias_${window.appData.startDate}_${window.appData.endDate}.xlsx`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+}
+
+window.downloadExcel = async function () {
+    if (!window.appData.schedule || window.appData.schedule.length === 0) {
+        Swal.fire('Atencion', 'No hay datos generados para exportar', 'warning');
+        return;
+    }
+
+    if (typeof ExcelJS === 'undefined') {
+        Swal.fire('Error', 'Libreria ExcelJS no cargada', 'error');
+        return;
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    const dates = window.appData.schedule.map((day) => day.date).sort();
+    const uniqueMonths = [...new Set(dates.map((date) => date.substring(0, 7)))];
+    const dayNames = ['D', 'L', 'M', 'X', 'J', 'V', 'S'];
+    const dayIndexByDate = Object.fromEntries(window.appData.schedule.map((day, index) => [day.date, index]));
+
+    uniqueMonths.forEach((monthStr) => {
+        const [year, month] = monthStr.split('-').map(Number);
+        const monthName = new Date(year, month - 1, 1).toLocaleString('es-ES', { month: 'long', year: 'numeric' });
+        const sheet = workbook.addWorksheet(monthName.substring(0, 31));
+        const daysInMonth = new Date(year, month, 0).getDate();
+
+        const rowMonth = [''];
+        const rowDays = [''];
+        const rowWeekdays = [''];
+
+        for (let dayNumber = 1; dayNumber <= daysInMonth; dayNumber++) {
+            rowMonth.push(monthName);
+            rowDays.push(dayNumber);
+            rowWeekdays.push(dayNames[new Date(year, month - 1, dayNumber).getDay()]);
+        }
+
+        sheet.addRow(rowMonth);
+        sheet.addRow(rowDays);
+        sheet.addRow(rowWeekdays);
+        sheet.mergeCells(1, 2, 1, daysInMonth + 1);
+        sheet.getCell(1, 2).alignment = { horizontal: 'center', vertical: 'middle' };
+        sheet.getRow(2).alignment = { horizontal: 'center' };
+        sheet.getRow(3).alignment = { horizontal: 'center' };
+
+        sheet.getColumn(1).width = 20;
+        for (let column = 2; column <= daysInMonth + 1; column++) {
+            sheet.getColumn(column).width = 4;
+        }
+
+        window.appData.people.forEach((person) => {
+            const personRow = [person.name];
+
+            for (let dayNumber = 1; dayNumber <= daysInMonth; dayNumber++) {
+                const isoStr = `${year}-${String(month).padStart(2, '0')}-${String(dayNumber).padStart(2, '0')}`;
+                const dayData = window.appData.schedule.find((day) => day.date === isoStr);
+                const assignedCount = dayData ? dayData.seats.filter((seat) => seat.pid === person.id).length : 0;
+                personRow.push(assignedCount > 0 ? assignedCount : '');
+            }
+
+            const addedRow = sheet.addRow(personRow);
+
+            for (let dayNumber = 1; dayNumber <= daysInMonth; dayNumber++) {
+                const isoStr = `${year}-${String(month).padStart(2, '0')}-${String(dayNumber).padStart(2, '0')}`;
+                const fallbackDate = new Date(year, month - 1, dayNumber);
+                const dayData = window.appData.schedule.find((day) => day.date === isoStr);
+                const dayIndex = dayIndexByDate[isoStr];
+                const status = dayData ? getExcelAvailabilityStatus(person, dayData, dayIndex) : 'none';
+                const cell = addedRow.getCell(dayNumber + 1);
+
+                cell.alignment = { horizontal: 'center', vertical: 'middle' };
+                applyExcelCellState(cell, status, fallbackDate.getDay() === 0 || fallbackDate.getDay() === 6);
+            }
+        });
+
+        const rowPlazas = ['Huecos del dia'];
+        const rowHuecosLibres = ['Huecos libres'];
+        const rowTipo = ['Tipo de dia'];
+
+        for (let dayNumber = 1; dayNumber <= daysInMonth; dayNumber++) {
+            const isoStr = `${year}-${String(month).padStart(2, '0')}-${String(dayNumber).padStart(2, '0')}`;
+            const fallbackDate = new Date(year, month - 1, dayNumber);
+            const dayData = window.appData.schedule.find((day) => day.date === isoStr);
+            const summary = getExcelDaySummary(dayData);
+
+            rowPlazas.push(summary.totalSlots || '');
+            rowHuecosLibres.push(summary.totalSlots ? summary.freeSlots : '');
+            rowTipo.push(getExcelDayTypeLabel(isoStr, fallbackDate));
+        }
+
+        sheet.addRow(rowPlazas);
+        sheet.addRow(rowHuecosLibres);
+        sheet.addRow(rowTipo);
+
+        sheet.eachRow((row) => {
+            row.eachCell((cell) => {
+                cell.border = {
+                    top: { style: 'thin' },
+                    left: { style: 'thin' },
+                    bottom: { style: 'thin' },
+                    right: { style: 'thin' }
+                };
+            });
+        });
+    });
+
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = window.URL.createObjectURL(blob);

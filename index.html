@@ -16,15 +16,13 @@
 
 <body class="bg-gray-50 text-gray-800 min-h-screen flex flex-col">
 
-    <!-- Loading -->
     <div id="loadingOverlay"
         class="fixed inset-0 bg-black bg-opacity-60 z-[60] hidden flex-col items-center justify-center text-white backdrop-blur-sm">
         <div class="loader mb-4"></div>
         <p class="font-bold text-lg" id="loadingTitle">Procesando...</p>
-        <p class="text-sm opacity-80" id="loadingSubtitle">Calculando distribución</p>
+        <p class="text-sm opacity-80" id="loadingSubtitle">Calculando distribucion</p>
     </div>
 
-    <!-- Header -->
     <header class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40">
         <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
             <h1 class="text-lg md:text-xl font-bold text-gray-800 flex items-center">
@@ -33,26 +31,26 @@
                 <span class="md:hidden">Guardias</span>
             </h1>
             <div class="flex gap-2">
-                <button onclick="openHistoryModal()" id="viewHistoryBtn"
+                <button id="viewHistoryBtn"
                     class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded shadow transition text-sm font-bold flex items-center hidden"
                     title="Ver Historial Cargado">
                     <i class="fas fa-list-alt mr-2"></i> Ver Datos
                 </button>
-                <button onclick="document.getElementById('historyInput').click()"
+                <button id="importHistoryBtn"
                     class="bg-purple-100 hover:bg-purple-200 text-purple-800 px-3 py-2 rounded border border-purple-300 transition text-sm font-bold flex items-center"
                     title="Importar Historial (Solo JSON de Contabilidad)">
                     <i class="fas fa-file-invoice mr-2"></i> Importar Historial
                 </button>
-                <input type="file" id="historyInput" class="hidden" accept=".json" onchange="importHistory(this)">
+                <input type="file" id="historyInput" class="hidden" accept=".json">
 
                 <div class="h-8 w-px bg-gray-300 mx-1"></div>
 
-                <button onclick="exportData()" class="text-gray-600 hover:bg-gray-100 p-2 rounded"
+                <button id="exportDataBtn" class="text-gray-600 hover:bg-gray-100 p-2 rounded"
                     title="Guardar Copia"><i class="fas fa-save"></i></button>
-                <button onclick="triggerImport()" class="text-blue-600 hover:bg-blue-50 p-2 rounded mx-1"
+                <button id="triggerImportBtn" class="text-blue-600 hover:bg-blue-50 p-2 rounded mx-1"
                     title="Restaurar Copia de Seguridad (Estado)"><i class="fas fa-upload"></i> Restaurar</button>
-                <input type="file" id="fileInput" class="hidden" accept=".json" onchange="importData(this)">
-                <button onclick="resetData()" class="text-red-500 hover:bg-red-50 p-2 rounded"
+                <input type="file" id="fileInput" class="hidden" accept=".json">
+                <button id="resetDataBtn" class="text-red-500 hover:bg-red-50 p-2 rounded"
                     title="Borrar Todo y Empezar de Nuevo"><i class="fas fa-trash-alt"></i></button>
             </div>
         </div>
@@ -60,37 +58,33 @@
 
     <main class="flex-grow max-w-7xl mx-auto px-4 py-8 w-full grid grid-cols-1 lg:grid-cols-3 gap-8">
 
-        <!-- Config -->
         <div class="lg:col-span-1 space-y-6">
             <div class="bg-white p-5 rounded-lg shadow-sm border border-gray-200">
-                <h2 class="font-bold text-gray-700 mb-4 border-b pb-2">1. Configuración</h2>
+                <h2 class="font-bold text-gray-700 mb-4 border-b pb-2">1. Configuracion</h2>
                 <div class="flex flex-wrap gap-3 mb-4 items-end">
                     <div class="flex-1 min-w-[120px]">
                         <label class="text-xs font-bold text-gray-500 block mb-1">INICIO</label>
                         <input type="date" id="startDate"
-                            class="border p-2 rounded text-sm w-full outline-none focus:ring-2 focus:ring-blue-200"
-                            onchange="saveStateInputs()">
+                            class="border p-2 rounded text-sm w-full outline-none focus:ring-2 focus:ring-blue-200">
                     </div>
                     <div class="flex-1 min-w-[120px]">
                         <label class="text-xs font-bold text-gray-500 block mb-1">FIN</label>
                         <input type="date" id="endDate"
-                            class="border p-2 rounded text-sm w-full outline-none focus:ring-2 focus:ring-blue-200"
-                            onchange="saveStateInputs()">
+                            class="border p-2 rounded text-sm w-full outline-none focus:ring-2 focus:ring-blue-200">
                     </div>
                     <div class="w-24">
                         <label class="text-xs font-bold text-gray-500 text-blue-600 block mb-1 whitespace-nowrap"
-                            title="Plazas por defecto para todos los días">PLAZAS BASE</label>
+                            title="Plazas por defecto para todos los dias">PLAZAS BASE</label>
                         <input type="number" id="defaultSlots" value="1" min="1"
-                            class="border p-2 rounded text-sm w-full outline-none focus:ring-2 focus:ring-blue-200 font-bold text-center"
-                            onchange="saveStateInputs()">
+                            class="border p-2 rounded text-sm w-full outline-none focus:ring-2 focus:ring-blue-200 font-bold text-center">
                     </div>
                 </div>
                 <div class="grid grid-cols-2 gap-2">
-                    <button onclick="openHolidayModal()"
+                    <button id="openHolidayModalBtn"
                         class="text-xs bg-orange-100 text-orange-700 px-2 py-2 rounded hover:bg-orange-200 transition flex justify-center items-center font-bold">
                         <i class="fas fa-umbrella-beach mr-1"></i> Festivos
                     </button>
-                    <button onclick="openStaffingModal()"
+                    <button id="openStaffingModalBtn"
                         class="text-xs bg-blue-100 text-blue-700 px-2 py-2 rounded hover:bg-blue-200 transition flex justify-center items-center font-bold">
                         <i class="fas fa-calendar-plus mr-1"></i> Excepciones Plazas
                     </button>
@@ -109,9 +103,9 @@
                     <input type="text" id="newPersonName" placeholder="Nombre"
                         class="w-full border p-2 rounded text-sm focus:ring-2 focus:ring-blue-200 outline-none">
                     <div class="flex gap-2">
-                        <input type="number" id="newPersonMin" placeholder="Mín Guardias"
+                        <input type="number" id="newPersonMin" placeholder="Min Guardias"
                             class="w-1/2 border p-2 rounded text-sm focus:ring-2 focus:ring-blue-200 outline-none">
-                        <input type="number" id="newPersonMax" placeholder="Máx Guardias"
+                        <input type="number" id="newPersonMax" placeholder="Max Guardias"
                             class="w-1/2 border p-2 rounded text-sm focus:ring-2 focus:ring-blue-200 outline-none">
                     </div>
                     <div class="pt-1 flex justify-between items-center">
@@ -120,11 +114,11 @@
                             <span class="ml-2 text-xs text-gray-600 font-medium">Acepta Dobletes</span>
                         </label>
                         <div class="flex gap-1">
-                            <button onclick="addPerson()"
+                            <button id="addPersonBtn"
                                 class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-bold uppercase tracking-wide transition shadow-sm">
                                 Añadir
                             </button>
-                            <button onclick="openDraftModal()" title="Configurar (Borrador) antes de añadir"
+                            <button id="openDraftModalBtn" title="Configurar (Borrador) antes de anadir"
                                 class="bg-gray-200 text-gray-600 hover:bg-gray-300 px-3 py-2 rounded text-sm transition shadow-sm">
                                 <i class="fas fa-calendar-alt"></i>
                             </button>
@@ -135,12 +129,12 @@
             </div>
 
             <div class="grid grid-cols-2 gap-2">
-                <button onclick="startGeneration(false)"
+                <button id="generateAllBtn"
                     class="w-full bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 text-white font-bold py-4 rounded-lg shadow-lg transform transition active:scale-95 flex flex-col items-center justify-center">
                     <span class="text-sm"><i class="fas fa-magic mr-1"></i>Generar Todo</span>
                     <span class="text-xs font-normal opacity-80">(Borra actual)</span>
                 </button>
-                <button onclick="startGeneration(true)"
+                <button id="fillGapsBtn"
                     class="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-bold py-4 rounded-lg shadow-lg transform transition active:scale-95 flex flex-col items-center justify-center">
                     <span class="text-sm"><i class="fas fa-fill-drip mr-1"></i>Rellenar Huecos</span>
                     <span class="text-xs font-normal opacity-80">(Respeta asignados)</span>
@@ -148,7 +142,6 @@
             </div>
         </div>
 
-        <!-- Results -->
         <div class="lg:col-span-2 space-y-6">
 
             <div id="statsPanel" class="bg-white p-5 rounded-lg shadow-sm border border-gray-200 hidden">
@@ -157,21 +150,21 @@
                         <h2 class="font-bold text-gray-700 text-lg">Resultados (Acumulado)</h2>
                     </div>
                     <div class="flex gap-2 flex-wrap justify-end">
-                        <button onclick="downloadReportJSON()"
+                        <button id="downloadReportJsonBtn"
                             class="bg-purple-600 hover:bg-purple-700 text-white text-xs px-3 py-2 rounded font-bold transition shadow-sm flex items-center">
                             <i class="fas fa-code mr-1"></i> JSON
                         </button>
-                        <button onclick="downloadPDF('schedule')"
+                        <button id="downloadSchedulePdfBtn"
                             class="bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-2 rounded font-bold transition shadow-sm flex items-center">
                             <i class="fas fa-file-pdf mr-1"></i> Calendario
                         </button>
-                        <button onclick="downloadExcel()"
+                        <button id="downloadExcelBtn"
                             class="bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-2 rounded font-bold transition shadow-sm flex items-center">
                             <i class="fas fa-file-excel mr-1"></i> Excel
                         </button>
-                        <button onclick="downloadPDF('debug')"
+                        <button id="downloadDebugPdfBtn"
                             class="hidden bg-gray-600 hover:bg-gray-700 text-white text-xs px-3 py-2 rounded font-bold transition shadow-sm flex items-center">
-                            <i class="fas fa-bug mr-1"></i> Auditoría
+                            <i class="fas fa-bug mr-1"></i> Auditoria
                         </button>
                     </div>
                 </div>
@@ -181,8 +174,8 @@
                             <tr>
                                 <th class="px-4 py-3">Nombre</th>
                                 <th class="px-4 py-3 text-center bg-gray-100">Total</th>
-                                <th class="px-4 py-3 text-center text-teal-600" title="Viernes y Vísperas">Vier+Vís</th>
-                                <th class="px-4 py-3 text-center text-purple-600" title="Sábados y Domingos">S-D</th>
+                                <th class="px-4 py-3 text-center text-teal-600" title="Viernes y Visperas">Vier+Vis</th>
+                                <th class="px-4 py-3 text-center text-purple-600" title="Sabados y Domingos">S-D</th>
                                 <th class="px-4 py-3 text-center text-orange-600" title="Festivos">Festivos</th>
                             </tr>
                         </thead>
@@ -199,7 +192,7 @@
                 </div>
                 <div class="flex justify-between items-center mb-2">
                     <h3 class="font-bold text-gray-700">Calendario Generado</h3>
-                    <div class="text-xs text-gray-400 italic">Pulsa la papelera para liberar un día y "Rellenar" para
+                    <div class="text-xs text-gray-400 italic">Pulsa la papelera para liberar un dia y "Rellenar" para
                         recalcularlo.</div>
                 </div>
                 <div class="overflow-x-auto max-h-[500px] rounded border border-gray-200">
@@ -209,7 +202,7 @@
                                 <th class="px-6 py-3 border-b bg-gray-50">Fecha</th>
                                 <th class="px-6 py-3 border-b bg-gray-50">Tipo</th>
                                 <th class="px-6 py-3 border-b bg-gray-50">Asignado</th>
-                                <th class="px-6 py-3 border-b bg-gray-50 text-center">Acción</th>
+                                <th class="px-6 py-3 border-b bg-gray-50 text-center">Accion</th>
                             </tr>
                         </thead>
                         <tbody id="scheduleBody" class="divide-y divide-gray-100 bg-white"></tbody>
@@ -225,44 +218,39 @@
         </div>
     </main>
 
-    <!-- Calendar Modal -->
     <div id="calendarModal"
         class="fixed inset-0 bg-black bg-opacity-60 z-50 hidden flex items-center justify-center backdrop-blur-sm p-4">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all duration-200"
-            onclick="event.stopPropagation()">
+        <div id="calendarModalContent"
+            class="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all duration-200">
             <div class="bg-gray-50 p-4 border-b flex justify-between items-center">
                 <h3 id="modalTitle" class="font-bold text-gray-800">Calendario</h3>
-                <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600"><i
+                <button id="closeCalendarModalIconBtn" class="text-gray-400 hover:text-gray-600"><i
                         class="fas fa-times"></i></button>
             </div>
-            <!-- Person Controls -->
             <div id="personModalControls"
                 class="flex justify-center p-2 gap-4 hidden bg-white border-b border-gray-100">
                 <label class="flex items-center text-xs font-bold cursor-pointer">
-                    <input type="radio" name="dayAction" value="block" checked class="text-red-500 mr-1"
-                        onchange="renderCalendar()">
+                    <input type="radio" name="dayAction" value="block" checked class="text-red-500 mr-1">
                     <span class="text-red-500">Bloquear</span>
                 </label>
                 <label class="flex items-center text-xs font-bold cursor-pointer">
-                    <input type="radio" name="dayAction" value="suggest" class="text-green-500 mr-1"
-                        onchange="renderCalendar()">
+                    <input type="radio" name="dayAction" value="suggest" class="text-green-500 mr-1">
                     <span class="text-green-500">Sugerir (Fijo)</span>
                 </label>
             </div>
-            <!-- Staffing Controls (Touch Friendly) -->
             <div id="staffingControls"
                 class="hidden flex justify-center items-center bg-blue-50 p-3 border-b border-blue-100">
-                <label class="text-xs font-bold text-blue-700 mr-2">Aplicar Nº Plazas:</label>
+                <label class="text-xs font-bold text-blue-700 mr-2">Aplicar N Plazas:</label>
                 <input type="number" id="modalStaffingCount" value="2" min="0"
                     class="w-16 border border-blue-300 rounded p-1 text-center font-bold focus:ring-2 focus:ring-blue-400 outline-none">
-                <span class="text-xs text-blue-400 ml-2">(Toca un día para aplicar)</span>
+                <span class="text-xs text-blue-400 ml-2">(Toca un dia para aplicar)</span>
             </div>
 
             <div class="p-4">
                 <div class="flex justify-between items-center mb-4">
-                    <button onclick="changeMonth(-1)" class="p-1"><i class="fas fa-chevron-left"></i></button>
+                    <button id="calendarPrevMonthBtn" class="p-1"><i class="fas fa-chevron-left"></i></button>
                     <span id="monthLabel" class="font-bold text-gray-700 capitalize"></span>
-                    <button onclick="changeMonth(1)" class="p-1"><i class="fas fa-chevron-right"></i></button>
+                    <button id="calendarNextMonthBtn" class="p-1"><i class="fas fa-chevron-right"></i></button>
                 </div>
                 <div class="grid grid-cols-7 gap-1 text-center text-xs font-bold text-gray-400 mb-2">
                     <div>L</div>
@@ -276,20 +264,19 @@
                 <div class="calendar-grid" id="calendarGrid"></div>
             </div>
             <div class="bg-gray-50 p-3 flex justify-end">
-                <button onclick="closeModal()"
+                <button id="closeCalendarModalBtn"
                     class="bg-gray-800 text-white px-5 py-2 rounded text-sm font-bold">Hecho</button>
             </div>
         </div>
     </div>
 
-    <!-- Edit Person Modal -->
     <div id="editPersonModal"
         class="fixed inset-0 bg-black bg-opacity-60 z-[55] hidden flex items-center justify-center backdrop-blur-sm p-4">
         <div
             class="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all duration-200">
             <div class="bg-gray-50 p-4 border-b flex justify-between items-center">
                 <h3 class="font-bold text-gray-800">Editar Persona</h3>
-                <button onclick="closeEditPersonModal()" class="text-gray-400 hover:text-gray-600"><i
+                <button id="closeEditPersonModalIconBtn" class="text-gray-400 hover:text-gray-600"><i
                         class="fas fa-times"></i></button>
             </div>
             <div class="p-6 space-y-4">
@@ -301,12 +288,12 @@
                 </div>
                 <div class="flex gap-3">
                     <div class="w-1/2">
-                        <label class="block text-xs font-bold text-gray-500 mb-1">Mínimo</label>
+                        <label class="block text-xs font-bold text-gray-500 mb-1">Minimo</label>
                         <input type="number" id="editPersonMin"
                             class="w-full border p-2 rounded text-sm focus:ring-2 focus:ring-blue-200 outline-none">
                     </div>
                     <div class="w-1/2">
-                        <label class="block text-xs font-bold text-gray-500 mb-1">Máximo</label>
+                        <label class="block text-xs font-bold text-gray-500 mb-1">Maximo</label>
                         <input type="number" id="editPersonMax"
                             class="w-full border p-2 rounded text-sm focus:ring-2 focus:ring-blue-200 outline-none">
                     </div>
@@ -319,23 +306,20 @@
                 </div>
             </div>
             <div class="bg-gray-50 p-4 border-t flex justify-end gap-2">
-                <button onclick="closeEditPersonModal()"
+                <button id="closeEditPersonModalBtn"
                     class="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded text-sm font-bold">Cancelar</button>
-                <button onclick="saveEditPerson()"
+                <button id="saveEditPersonBtn"
                     class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded text-sm font-bold shadow-sm">Guardar</button>
             </div>
         </div>
     </div>
 
-    </div>
-
-    <!-- History Modal -->
     <div id="historyModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden items-center justify-center p-4">
         <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
             <div class="px-6 py-4 border-b flex justify-between items-center">
                 <h3 class="text-xl font-bold text-gray-800"><i class="fas fa-history text-purple-600 mr-2"></i>Historial
                     Importado</h3>
-                <button onclick="closeHistoryModal()" class="text-gray-400 hover:text-gray-600"><i
+                <button id="closeHistoryModalIconBtn" class="text-gray-400 hover:text-gray-600"><i
                         class="fas fa-times text-xl"></i></button>
             </div>
             <div class="p-6 overflow-y-auto flex-grow">
@@ -347,233 +331,54 @@
                                 <th class="px-4 py-3">Nombre</th>
                                 <th class="px-4 py-3 text-center">Meses</th>
                                 <th class="px-4 py-3 text-center">Total G.</th>
-                                <th class="px-4 py-3 text-center text-teal-600">Vier/Vís</th>
-                                <th class="px-4 py-3 text-center text-purple-600">Sáb/Dom</th>
+                                <th class="px-4 py-3 text-center text-teal-600">Vier/Vis</th>
+                                <th class="px-4 py-3 text-center text-purple-600">Sab/Dom</th>
                                 <th class="px-4 py-3 text-center text-orange-600">Festivos</th>
                             </tr>
                         </thead>
-                        <tbody id="historyTableBody">
-                            <!-- Dynamic -->
-                        </tbody>
+                        <tbody id="historyTableBody"></tbody>
                     </table>
                 </div>
             </div>
             <div class="px-6 py-4 border-t flex justify-end bg-gray-50">
-                <button onclick="closeHistoryModal()"
+                <button id="closeHistoryModalBtn"
                     class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 px-4 rounded">Cerrar</button>
             </div>
         </div>
     </div>
 
-    <!-- Stats Detail Modal (Spyglass) -->
     <div id="statsModal"
         class="fixed inset-0 bg-black bg-opacity-60 z-[60] hidden items-center justify-center p-4 backdrop-blur-sm">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
             <div class="px-6 py-4 border-b flex justify-between items-center bg-gray-50">
                 <h3 class="text-lg font-bold text-gray-800 flex items-center">
                     <i class="fas fa-chart-pie text-blue-500 mr-2"></i>
-                    <span id="statsModalTitle">Detalle Estadísticas</span>
+                    <span id="statsModalTitle">Detalle Estadisticas</span>
                 </h3>
-                <button onclick="closeStatsModal()" class="text-gray-400 hover:text-gray-600 transition">
+                <button id="closeStatsModalIconBtn" class="text-gray-400 hover:text-gray-600 transition">
                     <i class="fas fa-times text-xl"></i>
                 </button>
             </div>
 
             <div class="p-6 overflow-y-auto bg-white flex-grow">
-                <!-- Averages Panel -->
-                <div id="statsAverages" class="mb-6 p-4 bg-white border border-gray-100 rounded-lg shadow-sm">
-                    <!-- Dynamic Averages -->
-                </div>
+                <div id="statsAverages" class="mb-6 p-4 bg-white border border-gray-100 rounded-lg shadow-sm"></div>
 
                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 border-b pb-1">Desglose Mensual
                     Assignments</h4>
-                <ul id="statsList" class="space-y-2">
-                    <!-- Dynamic List -->
-                </ul>
+                <ul id="statsList" class="space-y-2"></ul>
             </div>
 
             <div class="px-6 py-4 border-t bg-gray-50 flex justify-end">
-                <button onclick="closeStatsModal()"
+                <button id="closeStatsModalBtn"
                     class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded shadow-sm text-sm">Cerrar</button>
             </div>
         </div>
     </div>
 
-    <script src="js/state.js"></script>
-    <script src="js/algorithm.js"></script>
-    <script src="js/ui.js"></script>
-    <script src="js/main.js"></script>
-    
-    <script>
-        // Funciones en línea para evitar problemas de caché del navegador
-        window.downloadExcel = async function () {
-            // Check flat schedule in script.js OR modular schedule in js/main.js
-            const sched = window.appData.schedule;
-            if (!sched || sched.length === 0) {
-                Swal.fire('Atención', 'No hay datos generados para exportar', 'warning');
-                return;
-            }
-            
-            if (typeof ExcelJS === 'undefined') {
-                Swal.fire('Error', 'Librería ExcelJS no cargada', 'error');
-                return;
-            }
-
-            try {
-                const isModular = sched.length > 0 && sched[0].seats !== undefined;
-
-                const workbook = new ExcelJS.Workbook();
-                const dates = sched.map(s => s.date).sort();
-                const uniqueMonths = [...new Set(dates.map(d => d.substring(0,7)))];
-                const dayNames = ['D', 'L', 'M', 'X', 'J', 'V', 'S'];
-
-                uniqueMonths.forEach(monthStr => {
-                    const [year, month] = monthStr.split('-').map(Number);
-                    const dateObj = new Date(year, month - 1, 1);
-                    const monthName = dateObj.toLocaleString('es-ES', { month: 'long', year: 'numeric' });
-                    
-                    const sheet = workbook.addWorksheet(monthName.substring(0, 31));
-                    const daysInMonth = new Date(year, month, 0).getDate();
-                    
-                    const rowMonth = [''];
-                    const rowDays = [''];
-                    const rowWeekdays = [''];
-                    
-                    for (let d = 1; d <= daysInMonth; d++) {
-                        rowMonth.push(monthName);
-                        rowDays.push(d);
-                        const wDate = new Date(year, month - 1, d);
-                        rowWeekdays.push(dayNames[wDate.getDay()]);
-                    }
-                    
-                    sheet.addRow(rowMonth);
-                    sheet.addRow(rowDays);
-                    sheet.addRow(rowWeekdays);
-                    
-                    sheet.mergeCells(1, 2, 1, daysInMonth + 1);
-                    sheet.getCell(1, 2).alignment = { horizontal: 'center', vertical: 'middle' };
-                    
-                    sheet.getRow(2).alignment = { horizontal: 'center' };
-                    sheet.getRow(3).alignment = { horizontal: 'center' };
-                    
-                    sheet.getColumn(1).width = 20; 
-                    for (let i = 2; i <= daysInMonth + 1; i++) {
-                        sheet.getColumn(i).width = 4;
-                    }
-
-                    window.appData.people.forEach(p => {
-                        const pRow = [p.name];
-                        for (let d = 1; d <= daysInMonth; d++) {
-                            const isoStr = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-                            let val = '';
-
-                            if (isModular) {
-                                const dayData = sched.find(s => s.date === isoStr);
-                                if (dayData && dayData.seats) {
-                                    const assignedCount = dayData.seats.filter(s => s.pid === p.id).length;
-                                    if (assignedCount > 0) val = assignedCount;
-                                }
-                            } else {
-                                const assignedCount = sched.filter(s => s.date === isoStr && s.pid === p.id).length;
-                                if (assignedCount > 0) val = assignedCount;
-                            }
-                            pRow.push(val);
-                        }
-                        const addedRow = sheet.addRow(pRow);
-                        
-                        for (let d = 1; d <= daysInMonth; d++) {
-                            const isoStr = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-                            const wDate = new Date(year, month - 1, d);
-                            const cell = addedRow.getCell(d + 1);
-                            
-                            cell.alignment = { horizontal: 'center', vertical: 'middle' };
-                            
-                            let bgColor = null;
-                            const isWeekend = (wDate.getDay() === 0 || wDate.getDay() === 6);
-                            
-                            if (p.blocked.includes(isoStr)) {
-                                bgColor = 'FFFF0000'; 
-                            } else if (p.suggested && p.suggested.includes(isoStr)) {
-                                bgColor = 'FF00FF00'; 
-                            } else if (isWeekend) {
-                                bgColor = 'FFE0E0E0'; 
-                            }
-                            
-                            if (bgColor) {
-                                cell.fill = {
-                                    type: 'pattern',
-                                    pattern: 'solid',
-                                    fgColor: { argb: bgColor }
-                                };
-                            }
-                        }
-                    });
-                    
-                    const rowHuecos = ['Huecos'];
-                    const rowTipo = ['Tipo de Día'];
-                    
-                    for (let d = 1; d <= daysInMonth; d++) {
-                        const wDate = new Date(year, month - 1, d);
-                        const isoStr = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-                        
-                        // Tipo de Día
-                        let type = '';
-                        if(window.appData.holidays && window.appData.holidays.includes(isoStr)) type = 'festivo';
-                        else {
-                            const tmrObj = new Date(year, month - 1, d + 1);
-                            const tmrIso = `${tmrObj.getFullYear()}-${String(tmrObj.getMonth()+1).padStart(2,'0')}-${String(tmrObj.getDate()).padStart(2,'0')}`;
-                            if(window.appData.holidays && window.appData.holidays.includes(tmrIso)) type = 'vispera';
-                            else if (wDate.getDay() === 0 || wDate.getDay() === 6) type = 'weekend';
-                            else type = 'weekday';
-                        }
-                        rowTipo.push(type);
-                        
-                        // Huecos
-                        const defaultSlots = parseInt(document.getElementById('defaultSlots') ? document.getElementById('defaultSlots').value : 1) || 1;
-                        let huecoCount = defaultSlots;
-
-                        if (isModular) {
-                            const dayData = sched.find(s => s.date === isoStr);
-                            if (dayData && dayData.seats) {
-                                const needed = dayData.seats.length;
-                                const assigned = dayData.seats.filter(s => s.pid !== null).length;
-                                huecoCount = needed - assigned;
-                            }
-                        } else {
-                            const needed = window.appData.staffing?.[isoStr] ?? defaultSlots;
-                            const assigned = sched.filter(s => s.date === isoStr && s.pid).length;
-                            huecoCount = needed - assigned;
-                        }
-
-                        rowHuecos.push(huecoCount);
-                    }
-                    
-                    sheet.addRow(rowHuecos);
-                    sheet.addRow(rowTipo);
-                    
-                    sheet.eachRow((row) => {
-                        row.eachCell((cell) => {
-                            cell.border = {
-                                top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'}
-                            };
-                        });
-                    });
-                });
-                
-                const buffer = await workbook.xlsx.writeBuffer();
-                const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `Guardias_${window.appData.startDate}_${window.appData.endDate}.xlsx`;
-                a.click();
-                window.URL.revokeObjectURL(url);
-            } catch (error) {
-                console.error("Error generating excel:", error);
-                Swal.fire('Error', 'Hubo un problema al generar el Excel: ' + error.message, 'error');
-            }
-        };
-    </script>
+    <script src="js/state.js?v=20260410-1"></script>
+    <script src="js/algorithm.js?v=20260410-1"></script>
+    <script src="js/ui.js?v=20260410-1"></script>
+    <script src="js/main.js?v=20260410-1"></script>
 </body>
 
 </html>
