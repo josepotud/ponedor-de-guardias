@@ -480,16 +480,26 @@ function runSimulation(dates, curMonths, existingSchedule) {
                          score += 1000000; // Massive penalty
                     }
 
+                    const mo = dm.iso.substring(0, 7);
+
+                    let minBoost = 0;
+                    if (p.min && (s.curMonthly[mo] || 0) < parseInt(p.min)) {
+                         if (!dm.isFriEve && !dm.isHigh) {
+                              minBoost = 100000; // Urgently assign normal days to reach min
+                         } else {
+                              minBoost = 1000; // Slight preference in weekends/fridays
+                         }
+                    }
+
                     // +/- 1 Fairness Soft Cap
                     // If this person is winning by > 1, add penalty
                     const minTotal = Math.min(...Object.values(stats).map(z=>z.curTotal));
-                    if (s.curTotal > minTotal + 1) score += 50000;
+                    if (s.curTotal > minTotal + 1 && minBoost < 100000) score += 50000;
 
-                    const mo = dm.iso.substring(0, 7);
                     const minMonthly = Math.min(...Object.values(stats).map(z => z.curMonthly[mo] || 0));
-                    if ((s.curMonthly[mo] || 0) > minMonthly + 1) score += 50000;
+                    if ((s.curMonthly[mo] || 0) > minMonthly + 1 && minBoost < 100000) score += 50000;
 
-                    if(p.min && (s.curMonthly[mo] || 0) < parseInt(p.min)) score -= 100000; // Boost min req
+                    score -= minBoost;
                     
                     score += Math.random() * 500; // Randomization
                     p.tempScore = score;
