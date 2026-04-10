@@ -747,3 +747,150 @@ window.rebuildScheduleWithMerge = function () {
     updateData(); // centralized update
     showToast('Calendario actualizado manteniendo coincidencias', 'success');
 }
+
+window.downloadExcel = async function () {
+    if (!window.appData.schedule || window.appData.schedule.length === 0) {
+        Swal.fire('Atención', 'No hay datos generados para exportar', 'warning');
+        return;
+    }
+    
+    if (typeof ExcelJS === 'undefined') {
+        Swal.fire('Error', 'Librería ExcelJS no cargada', 'error');
+        return;
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    const dates = window.appData.schedule.map(s => s.date).sort();
+    const uniqueMonths = [...new Set(dates.map(d => d.substring(0,7)))];
+    const dayNames = ['D', 'L', 'M', 'X', 'J', 'V', 'S'];
+
+    uniqueMonths.forEach(monthStr => {
+        const [year, month] = monthStr.split('-').map(Number);
+        const dateObj = new Date(year, month - 1, 1);
+        const monthName = dateObj.toLocaleString('es-ES', { month: 'long', year: 'numeric' });
+        
+        const sheet = workbook.addWorksheet(monthName.substring(0, 31));
+        const daysInMonth = new Date(year, month, 0).getDate();
+        
+        const rowMonth = [''];
+        const rowDays = [''];
+        const rowWeekdays = [''];
+        
+        for (let d = 1; d <= daysInMonth; d++) {
+            rowMonth.push(monthName);
+            rowDays.push(d);
+            const wDate = new Date(year, month - 1, d);
+            rowWeekdays.push(dayNames[wDate.getDay()]);
+        }
+        
+        sheet.addRow(rowMonth);
+        sheet.addRow(rowDays);
+        sheet.addRow(rowWeekdays);
+        
+        sheet.mergeCells(1, 2, 1, daysInMonth + 1);
+        sheet.getCell(1, 2).alignment = { horizontal: 'center', vertical: 'middle' };
+        
+        sheet.getRow(2).alignment = { horizontal: 'center' };
+        sheet.getRow(3).alignment = { horizontal: 'center' };
+        
+        sheet.getColumn(1).width = 20; 
+        for (let i = 2; i <= daysInMonth + 1; i++) {
+            sheet.getColumn(i).width = 4;
+        }
+
+        window.appData.people.forEach(p => {
+            const pRow = [p.name];
+            for (let d = 1; d <= daysInMonth; d++) {
+                const wDate = new Date(year, month - 1, d);
+                const isoStr = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                
+                let val = '';
+                const dayData = window.appData.schedule.find(s => s.date === isoStr);
+                if (dayData && dayData.seats) {
+                    const assignedCount = dayData.seats.filter(s => s.pid === p.id).length;
+                    if (assignedCount > 0) val = assignedCount;
+                }
+                
+                pRow.push(val);
+            }
+            const addedRow = sheet.addRow(pRow);
+            
+            for (let d = 1; d <= daysInMonth; d++) {
+                const wDate = new Date(year, month - 1, d);
+                const isoStr = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                const cell = addedRow.getCell(d + 1);
+                
+                cell.alignment = { horizontal: 'center', vertical: 'middle' };
+                
+                let bgColor = null;
+                const isWeekend = (wDate.getDay() === 0 || wDate.getDay() === 6);
+                
+                if (p.blocked.includes(isoStr)) {
+                    bgColor = 'FFFF0000'; 
+                } else if (p.suggested && p.suggested.includes(isoStr)) {
+                    bgColor = 'FF00FF00'; 
+                } else if (isWeekend) {
+                    bgColor = 'FFE0E0E0'; 
+                }
+                
+                if (bgColor) {
+                    cell.fill = {
+                        type: 'pattern',
+                        pattern: 'solid',
+                        fgColor: { argb: bgColor }
+                    };
+                }
+            }
+        });
+        
+        const rowHuecos = ['Huecos'];
+        const rowTipo = ['Tipo de Día'];
+        
+        for (let d = 1; d <= daysInMonth; d++) {
+            const wDate = new Date(year, month - 1, d);
+            const isoStr = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            
+            let type = '';
+            if(window.appData.holidays && window.appData.holidays.includes(isoStr)) type = 'festivo';
+            else {
+                const tmrObj = new Date(year, month - 1, d + 1);
+                const tmrIso = `${tmrObj.getFullYear()}-${String(tmrObj.getMonth()+1).padStart(2,'0')}-${String(tmrObj.getDate()).padStart(2,'0')}`;
+                if(window.appData.holidays && window.appData.holidays.includes(tmrIso)) type = 'vispera';
+                else if (wDate.getDay() === 0 || wDate.getDay() === 6) type = 'weekend';
+                else type = 'weekday';
+            }
+            rowTipo.push(type);
+            
+            let needed = parseInt(document.getElementById('defaultSlots') ? document.getElementById('defaultSlots').value : 1) || 1;
+            const dayData = window.appData.schedule.find(s => s.date === isoStr);
+            let huecoCount = needed;
+            if (dayData && dayData.seats) {
+                needed = dayData.seats.length;
+                const assigned = dayData.seats.filter(s => s.pid !== null).length;
+                huecoCount = needed - assigned;
+            }
+            
+            rowHuecos.push(huecoCount);
+        }
+        
+        sheet.addRow(rowHuecos);
+        sheet.addRow(rowTipo);
+        
+        sheet.eachRow((row, rowNumber) => {
+            row.eachCell((cell) => {
+                cell.border = {
+                    top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'}
+                };
+            });
+        });
+    });
+    
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Guardias_${window.appData.startDate}_${window.appData.endDate}.xlsx`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+}
