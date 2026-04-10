@@ -384,6 +384,7 @@ function runSimulation(dates, curMonths, existingSchedule) {
             id: p.id,
             histTotal: h.total||0, histHol: h.hol||0, histSD: h.sd||0, histFri: h.fri||0,
             curTotal: 0, curHol: 0, curSD: 0, curFri: 0,
+            curMonthly: {},
             lastIndex: -99, lastWkdIndex: -99,
             totalMonths: (h.months||0) + curMonths,
             thursdaysIndices: [] 
@@ -484,7 +485,11 @@ function runSimulation(dates, curMonths, existingSchedule) {
                     const minTotal = Math.min(...Object.values(stats).map(z=>z.curTotal));
                     if (s.curTotal > minTotal + 1) score += 50000;
 
-                    if(p.min && s.curTotal < parseInt(p.min)) score -= 100000; // Boost min req
+                    const mo = dm.iso.substring(0, 7);
+                    const minMonthly = Math.min(...Object.values(stats).map(z => z.curMonthly[mo] || 0));
+                    if ((s.curMonthly[mo] || 0) > minMonthly + 1) score += 50000;
+
+                    if(p.min && (s.curMonthly[mo] || 0) < parseInt(p.min)) score -= 100000; // Boost min req
                     
                     score += Math.random() * 500; // Randomization
                     p.tempScore = score;
@@ -594,8 +599,9 @@ function getCandidates(dm, stats, metaArr) {
         if (appData.manualBans && appData.manualBans[dm.iso] && appData.manualBans[dm.iso].includes(p.id)) return false;
         
         // Max?
+        const mo = dm.iso.substring(0, 7);
         const s = stats[p.id];
-        if (p.max && s.curTotal >= parseInt(p.max)) return false;
+        if (p.max && (s.curMonthly[mo] || 0) >= parseInt(p.max)) return false;
         
         // Fatigue / Consecutive
         if (!checkConsecutive(p.id, dm.idx, metaArr, p.doublets)) return false;
@@ -608,6 +614,8 @@ function assignToMeta(dm, p, st) {
     dm.assigned.push(p.name);
     const s = st[p.id];
     s.curTotal++;
+    const mo = dm.iso.substring(0, 7);
+    s.curMonthly[mo] = (s.curMonthly[mo] || 0) + 1;
     s.lastIndex = dm.idx;
     if (dm.type === 'HOLIDAY') s.curHol++;
     else if (dm.type === 'WEEKEND') { s.curSD++; s.lastWkdIndex = dm.idx; }
@@ -668,6 +676,8 @@ function fillGaps(schedule, stats, dates) {
            if (canAssign) {
                gap.pid = p.id; gap.name = p.name;
                stats[p.id].curTotal++; // Update stats aprox
+               const mo = gap.date.substring(0, 7);
+               stats[p.id].curMonthly[mo] = (stats[p.id].curMonthly[mo] || 0) + 1;
                filled = true;
                break;
            }
@@ -692,9 +702,13 @@ function fillGaps(schedule, stats, dates) {
                      // Check if we can empty yesterday
                      gap.pid = p.id; gap.name = p.name;
                      stats[p.id].curTotal++;
+                     const gapMo = gap.date.substring(0, 7);
+                     stats[p.id].curMonthly[gapMo] = (stats[p.id].curMonthly[gapMo] || 0) + 1;
                      
+                     const prevMo = workingPrev.date.substring(0, 7);
                      workingPrev.pid = null; workingPrev.name = null;
                      stats[p.id].curTotal--;
+                     if(stats[p.id].curMonthly[prevMo]) stats[p.id].curMonthly[prevMo]--;
                      
                      // Now yesterday is a gap, we will need to re-run or hopefully next recursion fixes it?
                      // This function doesn't recurse. It's a single pass.
@@ -709,10 +723,15 @@ function fillGaps(schedule, stats, dates) {
                 // If no collision with prev, maybe next?
                 const workingNext = schedule.find(s => s.idx === dayIdx + 1 && s.pid === p.id);
                 if (workingNext) {
-                    gap.pid = p.id; gap.name = p.name;
+                     gap.pid = p.id; gap.name = p.name;
                      stats[p.id].curTotal++;
+                     const gapMo2 = gap.date.substring(0, 7);
+                     stats[p.id].curMonthly[gapMo2] = (stats[p.id].curMonthly[gapMo2] || 0) + 1;
+
+                     const nextMo = workingNext.date.substring(0, 7);
                      workingNext.pid = null; workingNext.name = null;
                      stats[p.id].curTotal--;
+                     if(stats[p.id].curMonthly[nextMo]) stats[p.id].curMonthly[nextMo]--;
                      filled = true; 
                      break;
                 }
