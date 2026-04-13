@@ -66,6 +66,49 @@ window.hasThursday = function (pid, satSunIdx, metaArr) {
     return false;
 }
 
+window.getMonthKey = function (dateLike) {
+    const iso = typeof dateLike === 'string' ? dateLike : getISO(dateLike);
+    return iso.substring(0, 7);
+}
+
+window.getMonthImbalanceScore = function (stats) {
+    const monthKeys = new Set();
+    Object.values(stats).forEach((personStats) => {
+        Object.keys(personStats.curByMonth || {}).forEach((monthKey) => monthKeys.add(monthKey));
+    });
+
+    if (monthKeys.size === 0) return 0;
+
+    let totalPenalty = 0;
+    monthKeys.forEach((monthKey) => {
+        const counts = Object.values(stats).map((personStats) => personStats.curByMonth?.[monthKey] || 0);
+        const mean = counts.reduce((sum, value) => sum + value, 0) / counts.length;
+        const variance = counts.reduce((sum, value) => sum + Math.pow(value - mean, 2), 0) / counts.length;
+        totalPenalty += variance;
+    });
+
+    return totalPenalty / monthKeys.size;
+}
+
+window.getMinShortfallScore = function (stats) {
+    let totalShortfall = 0;
+    let unmetPeople = 0;
+
+    window.appData.people.forEach((person) => {
+        const minRequired = parseInt(person.min, 10) || 0;
+        if (minRequired <= 0) return;
+
+        const assigned = stats[person.id]?.curTotal || 0;
+        const shortfall = Math.max(0, minRequired - assigned);
+        if (shortfall > 0) {
+            totalShortfall += shortfall;
+            unmetPeople++;
+        }
+    });
+
+    return { totalShortfall, unmetPeople };
+}
+
 window.getCandidates = function (dm, stats, metaArr) {
     const shuffled = [...window.appData.people].sort(() => Math.random() - 0.5);
     return shuffled.filter(p => {
@@ -91,6 +134,7 @@ window.assignToMeta = function (dm, p, st) {
     dm.assigned.push(p.id);
     const s = st[p.id];
     s.curTotal++;
+    s.curByMonth[dm.monthKey] = (s.curByMonth[dm.monthKey] || 0) + 1;
     s.lastIndex = dm.idx;
     if (dm.type === 'HOLIDAY') s.curHol++;
     else if (dm.type === 'WEEKEND') { s.curSD++; s.lastWkdIndex = dm.idx; }
@@ -129,6 +173,7 @@ window.runSimulation = function (dates, curMonths, existingSchedule) {
             id: p.id,
             histTotal: h.total || 0, histHol: h.hol || 0, histSD: h.sd || 0, histFri: h.fri || 0,
             curTotal: 0, curHol: 0, curSD: 0, curFri: 0,
+            curByMonth: {},
             lastIndex: -99, lastWkdIndex: -99,
             totalMonths: (h.months || 0) + curMonths,
             thursdaysIndices: []
@@ -144,7 +189,7 @@ window.runSimulation = function (dates, curMonths, existingSchedule) {
         const isHigh = (type === 'HOLIDAY' || type === 'WEEKEND');
         const needed = window.appData.staffing[iso] !== undefined ? window.appData.staffing[iso] : defaultSlots;
         const dayOfWeek = d.getDay();
-        return { idx: i, date: d, iso, type, isFriEve, isHigh, needed, assigned: [], lockedPids: [], dayOfWeek };
+        return { idx: i, date: d, iso, monthKey: getMonthKey(iso), type, isFriEve, isHigh, needed, assigned: [], lockedPids: [], dayOfWeek };
     });
 
     // Pre-fill
@@ -197,6 +242,14 @@ window.runSimulation = function (dates, curMonths, existingSchedule) {
                 candidates.forEach(p => {
                     const s = stats[p.id];
                     let score = 0;
+                    const monthKey = dm.monthKey;
+                    const monthCounts = Object.values(stats).map(z => z.curByMonth[monthKey] || 0);
+                    const monthMin = Math.min(...monthCounts);
+                    const monthMax = Math.max(...monthCounts);
+                    const projectedMonthCount = (s.curByMonth[monthKey] || 0) + 1;
+                    const minRequired = parseInt(p.min, 10) || 0;
+                    const minDeficit = Math.max(0, minRequired - s.curTotal);
+
                     if (dm.isHigh) {
                         score += (s.histHol + s.curHol + s.histSD + s.curSD) * 20000;
                         if ((dm.idx - s.lastWkdIndex) < 6) score += 50000;
@@ -216,8 +269,14 @@ window.runSimulation = function (dates, curMonths, existingSchedule) {
                     } else if (dm.isFriEve) {
                         score += (s.histFri + s.curFri) * 10000;
                     }
+
+                    score += projectedMonthCount * 40000;
+                    if (projectedMonthCount > monthMin + 1) score += 200000;
+                    else if (projectedMonthCount > monthMin) score += 60000;
+                    if ((s.curByMonth[monthKey] || 0) === monthMax && monthMax > monthMin) score += 40000;
+
                     const globalRatio = (s.histTotal + s.curTotal) / s.totalMonths;
-                    score += globalRatio * 1000;
+                    score += globalRatio * 250;
 
                     // --- RULE: Thursday Influence ---
                     // "Si le toca un jueves, tiene que tener menos probabilidad de que le toque sabado o domingo"
@@ -272,9 +331,9 @@ window.runSimulation = function (dates, curMonths, existingSchedule) {
                     // Logic seems correct: Lower is better.
 
                     const minTotal = Math.min(...Object.values(stats).map(z => z.curTotal));
-                    if (s.curTotal > minTotal + 1) score += 50000;
+                    if (s.curTotal > minTotal + 1) score += 15000;
 
-                    if (p.min && s.curTotal < parseInt(p.min)) score -= 100000;
+                    if (minDeficit > 0) score -= 300000 - (minDeficit * 10000);
                     score += Math.random() * 500;
                     p.tempScore = score;
                 });
@@ -317,8 +376,18 @@ window.runSimulation = function (dates, curMonths, existingSchedule) {
     const currents = Object.values(stats).map(s => s.curTotal);
     const mean = currents.reduce((a, b) => a + b, 0) / currents.length;
     const variance = currents.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / currents.length;
+    const monthImbalance = getMonthImbalanceScore(stats);
+    const minShortfall = getMinShortfallScore(stats);
 
-    return { schedule, unassigned: unassignedTotal, stdDev: Math.sqrt(variance), statsRef: stats };
+    return {
+        schedule,
+        unassigned: unassignedTotal,
+        minShortfall: minShortfall.totalShortfall,
+        unmetMinimumPeople: minShortfall.unmetPeople,
+        stdDev: monthImbalance,
+        globalStdDev: Math.sqrt(variance),
+        statsRef: stats
+    };
 }
 
 // Check assignment validity based on the schedule structure
@@ -434,7 +503,14 @@ window.fillGaps = function (schedule, stats, dates) {
         if (window.appData.manualBans && window.appData.manualBans[day.date]) {
             candidates = candidates.filter(p => !window.appData.manualBans[day.date].includes(p.id));
         }
-        candidates.sort((a, b) => stats[a.id].curTotal - stats[b.id].curTotal);
+        candidates.sort((a, b) => {
+            const minDiff = Math.max(0, (parseInt(b.min, 10) || 0) - (stats[b.id].curTotal || 0)) - Math.max(0, (parseInt(a.min, 10) || 0) - (stats[a.id].curTotal || 0));
+            if (minDiff !== 0) return minDiff;
+            const monthKey = getMonthKey(day.date);
+            const monthDiff = (stats[a.id].curByMonth?.[monthKey] || 0) - (stats[b.id].curByMonth?.[monthKey] || 0);
+            if (monthDiff !== 0) return monthDiff;
+            return stats[a.id].curTotal - stats[b.id].curTotal;
+        });
 
         let filled = false;
 
@@ -443,6 +519,7 @@ window.fillGaps = function (schedule, stats, dates) {
             if (isValidAssignment(p.id, dayIdx, null, schedule, p.doublets)) {
                 seat.pid = p.id; seat.name = p.name;
                 stats[p.id].curTotal++;
+                stats[p.id].curByMonth[day.monthKey || getMonthKey(day.date)] = (stats[p.id].curByMonth[day.monthKey || getMonthKey(day.date)] || 0) + 1;
                 filled = true;
                 break;
             }
@@ -463,7 +540,8 @@ window.fillGaps = function (schedule, stats, dates) {
                         if (isValidAssignment(p.id, dayIdx, null, schedule, p.doublets)) {
                             seat.pid = p.id; seat.name = p.name;
                             prevSeat.name = null;
-                            stats[p.id].curTotal++;
+                            stats[p.id].curByMonth[day.monthKey || getMonthKey(day.date)] = (stats[p.id].curByMonth[day.monthKey || getMonthKey(day.date)] || 0) + 1;
+                            stats[p.id].curByMonth[prevDay.monthKey || getMonthKey(prevDay.date)] = Math.max(0, (stats[p.id].curByMonth[prevDay.monthKey || getMonthKey(prevDay.date)] || 0) - 1);
                             filled = true;
                             break;
                         } else {
@@ -484,6 +562,8 @@ window.fillGaps = function (schedule, stats, dates) {
                         if (isValidAssignment(p.id, dayIdx, null, schedule, p.doublets)) {
                             seat.pid = p.id; seat.name = p.name;
                             nextSeat.name = null;
+                            stats[p.id].curByMonth[day.monthKey || getMonthKey(day.date)] = (stats[p.id].curByMonth[day.monthKey || getMonthKey(day.date)] || 0) + 1;
+                            stats[p.id].curByMonth[nextDay.monthKey || getMonthKey(nextDay.date)] = Math.max(0, (stats[p.id].curByMonth[nextDay.monthKey || getMonthKey(nextDay.date)] || 0) - 1);
                             filled = true;
                             break;
                         } else {
