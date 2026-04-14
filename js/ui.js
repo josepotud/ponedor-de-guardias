@@ -16,7 +16,7 @@ window.renderPeople = function () {
                 <p class="font-bold text-gray-800">${p.name}</p>
                 <p class="text-xs text-gray-500">
                     Min: ${p.min} | Max: ${p.max} | Dobletes: ${p.doublets ? 'Si' : 'No'} <br>
-                    Bloqueos: ${p.blocked.length} | Pref: ${p.suggested ? p.suggested.length : 0}
+                    Bloqueos: ${p.blocked.length} | Pref: ${p.suggested ? p.suggested.length : 0} | Exigidos: ${p.required ? p.required.length : 0}
                 </p>
             </div>
             <div class="flex gap-2">
@@ -56,11 +56,12 @@ window.addPerson = function () {
         max: maxInput.value ? parseInt(maxInput.value) : "", // Empty if not provided
         doublets: doubletsInput.checked,
         blocked: [...draft.blocked],
-        suggested: [...draft.suggested]
+        suggested: [...draft.suggested],
+        required: [...(draft.required || [])]
     });
 
     // Cleanup Draft
-    window.draftPerson = { blocked: [], suggested: [] };
+    window.draftPerson = { blocked: [], suggested: [], required: [] };
 
     // Cleanup Inputs
     nameInput.value = '';
@@ -281,14 +282,15 @@ window.renderCalendar = function () {
     }
 
     // Determine target data
-    let blockedArr = [], suggestedArr = [], holidaysArr = window.appData.holidays;
+    let blockedArr = [], suggestedArr = [], requiredArr = [], holidaysArr = window.appData.holidays;
     if (modalMode === 'person' && currentPersonId) {
         const p = window.appData.people.find(x => x.id === currentPersonId);
-        if (p) { blockedArr = p.blocked; suggestedArr = p.suggested; }
+        if (p) { blockedArr = p.blocked || []; suggestedArr = p.suggested || []; requiredArr = p.required || []; }
     } else if (modalMode === 'draft') {
-        if (!window.draftPerson) window.draftPerson = { blocked: [], suggested: [] };
-        blockedArr = window.draftPerson.blocked;
-        suggestedArr = window.draftPerson.suggested;
+        if (!window.draftPerson) window.draftPerson = { blocked: [], suggested: [], required: [] };
+        blockedArr = window.draftPerson.blocked || [];
+        suggestedArr = window.draftPerson.suggested || [];
+        requiredArr = window.draftPerson.required || [];
     }
 
     // Render Days
@@ -321,7 +323,8 @@ window.renderCalendar = function () {
                 // Person/Draft Mode
                 if (holidaysArr.includes(iso)) cls = "bg-orange-50 text-orange-400"; // Background holiday indicator
 
-                if (blockedArr.includes(iso)) cls = "bg-red-100 border-red-300 text-red-800 font-bold";
+                if (requiredArr.includes(iso)) cls = "bg-purple-100 border-purple-300 text-purple-800 font-bold";
+                else if (blockedArr.includes(iso)) cls = "bg-red-100 border-red-300 text-red-800 font-bold";
                 else if (suggestedArr.includes(iso)) cls = "bg-green-100 border-green-300 text-green-800 font-bold";
             }
 
@@ -344,22 +347,35 @@ window.renderCalendar = function () {
                     const action = document.querySelector('input[name="dayAction"]:checked').value || 'block';
                     // Helpers to modify arrays
                     const modifyState = (targetObj) => {
-                        const blk = targetObj.blocked;
-                        const sug = targetObj.suggested;
+                        const blk = targetObj.blocked || [];
+                        const sug = targetObj.suggested || [];
+                        const req = targetObj.required || [];
 
                         if (action === 'block') {
                             if (blk.includes(iso)) blk.splice(blk.indexOf(iso), 1);
                             else {
                                 if (sug.includes(iso)) sug.splice(sug.indexOf(iso), 1);
+                                if (req.includes(iso)) req.splice(req.indexOf(iso), 1);
                                 blk.push(iso);
                             }
-                        } else { // suggest
+                        } else if (action === 'suggest') {
                             if (sug.includes(iso)) sug.splice(sug.indexOf(iso), 1);
                             else {
                                 if (blk.includes(iso)) blk.splice(blk.indexOf(iso), 1);
+                                if (req.includes(iso)) req.splice(req.indexOf(iso), 1);
                                 sug.push(iso);
                             }
+                        } else if (action === 'require') {
+                            if (req.includes(iso)) req.splice(req.indexOf(iso), 1);
+                            else {
+                                if (blk.includes(iso)) blk.splice(blk.indexOf(iso), 1);
+                                if (sug.includes(iso)) sug.splice(sug.indexOf(iso), 1);
+                                req.push(iso);
+                            }
                         }
+                        targetObj.blocked = blk;
+                        targetObj.suggested = sug;
+                        targetObj.required = req;
                     };
 
                     if (modalMode === 'person' && currentPersonId) {
@@ -465,7 +481,7 @@ window.renderResults = function (unassigned) {
                      <div class="font-bold ${seat.pid ? '' : 'text-red-500'} ${assignClass}" ${assignClick}>
                         ${seat.name || 'VACÍO (Click to Add)'}
                     </div>
-                    ${seat.locked ? '<i class="fas fa-lock text-xs text-gray-400 ml-2" title="Manual / Bloqueado"></i>' : ''}
+                    ${seat.locked ? '<i class="fas fa-lock text-xs text-gray-400 ml-2 cursor-pointer hover:text-gray-600" title="Desbloquear (Manual / Exigido)" onclick="unlockSlot(\'' + day.date + '\', ' + seat.idx + ')"></i>' : ''}
                     ${warnIcon}
                     ${errorHtml}
                 </td>

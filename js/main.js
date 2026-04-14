@@ -208,22 +208,54 @@ window.clearSlot = function (dateIso, seatIdx) {
         const pid = slot.pid;
 
         if (pid) {
-            const p = window.appData.people.find(x => x.id === pid);
-            if (p) {
-                // Restore auto-block (User Request)
-                if (!p.blocked.includes(dateIso)) {
-                    p.blocked.push(dateIso);
-                    if (p.suggested) p.suggested = p.suggested.filter(d => d !== dateIso);
+            Swal.fire({
+                title: 'Borrar Guardia',
+                text: '¿Quieres bloquear este día para este usuario para que no se le vuelva a asignar?',
+                icon: 'question',
+                showDenyButton: true,
+                showCancelButton: true,
+                confirmButtonText: 'Sí, bloquear',
+                denyButtonText: 'No, solo borrar',
+                cancelButtonText: 'Cancelar'
+            }).then((result) => {
+                if (result.isConfirmed || result.isDenied) {
+                    const p = window.appData.people.find(x => x.id === pid);
+                    if (p) {
+                        if (result.isConfirmed) {
+                            if (!p.blocked.includes(dateIso)) {
+                                p.blocked.push(dateIso);
+                                if (p.suggested) p.suggested = p.suggested.filter(d => d !== dateIso);
+                            }
+                        }
+                        // Always remove from required if it was manually cleared
+                        if (p.required) p.required = p.required.filter(d => d !== dateIso);
+                    }
+
+                    slot.pid = null;
+                    slot.name = null;
+                    slot.locked = false;
+
+                    updateData();
+                    showToast(result.isConfirmed ? 'Guardia eliminada y día bloqueado' : 'Guardia eliminada temporalmente', 'info');
                 }
-            }
+            });
+        }
+    }
+}
 
-            const slot = day.seats[seatIdx];
-            slot.pid = null;
-            slot.name = null;
+window.unlockSlot = function(dateIso, seatIdx) {
+    const day = window.appData.schedule.find(s => s.date === dateIso);
+    if (day && day.seats[seatIdx]) {
+        const slot = day.seats[seatIdx];
+        const pid = slot.pid;
+        if (pid) {
             slot.locked = false;
-
+            const p = window.appData.people.find(x => x.id === pid);
+            if (p && p.required) {
+                p.required = p.required.filter(d => d !== dateIso);
+            }
             updateData();
-            showToast(`Guardia eliminada y día bloqueado`, 'info');
+            showToast('Día desbloqueado (ya no es fijo)', 'success');
         }
     }
 }
@@ -302,13 +334,35 @@ window.applyManualAssign = function (dayIdx, seatIdx, pid) {
         return;
     }
 
-    targetToken.pid = p.id;
-    targetToken.name = p.name;
-    // Lock it so fillGaps doesn't move it
-    targetToken.locked = true;
+    Swal.fire({
+        title: 'Asignación Manual',
+        text: '¿Quieres que este día sea un "Día Exigido" (fijo)? Los días exigidos se quedan marcados y nunca se borran ni recalculan.',
+        icon: 'question',
+        showDenyButton: true,
+        showCancelButton: true,
+        confirmButtonText: 'Sí, Exigido (Fijo)',
+        denyButtonText: 'No, Asignación normal',
+        cancelButtonText: 'Cancelar'
+    }).then((result) => {
+        if (result.isConfirmed || result.isDenied) {
+            if (result.isConfirmed) {
+                if (!p.required) p.required = [];
+                if (!p.required.includes(day.date)) p.required.push(day.date);
+                // Also remove from blocks or suggestions if present
+                if (p.blocked.includes(day.date)) p.blocked = p.blocked.filter(d => d !== day.date);
+                if (p.suggested && p.suggested.includes(day.date)) p.suggested = p.suggested.filter(d => d !== day.date);
+                targetToken.locked = true;
+            } else {
+                targetToken.locked = false;
+            }
 
-    updateData(); // Centralized update for alerts
-    showToast(`Asignado: ${p.name} -> ${day.date}`, 'success');
+            targetToken.pid = p.id;
+            targetToken.name = p.name;
+
+            updateData(); // Centralized update for alerts
+            showToast(`Asignado: ${p.name} -> ${day.date}`, 'success');
+        }
+    });
 }
 
 window.initializeEmptySchedule = function () {
