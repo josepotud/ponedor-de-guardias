@@ -459,8 +459,8 @@ window.renderResults = function (unassigned) {
                 warnIcon = `<i class="fas fa-exclamation-triangle text-red-500 ml-2" title="${errors[seat.pid][day.date]}"></i>`;
             }
 
-            const assignClass = seat.pid ? '' : 'cursor-pointer hover:bg-gray-100 text-blue-500 underline decoration-dashed';
-            const assignClick = seat.pid ? '' : `onclick="openManualAssign(${dayIndex}, ${seat.idx})"`;
+            const assignClass = seat.pid ? 'cursor-pointer hover:bg-gray-100 transition rounded px-1 -mx-1' : 'cursor-pointer hover:bg-gray-100 text-blue-500 underline decoration-dashed';
+            const assignClick = seat.pid ? `onclick="toggleLockSlot('${day.date}', ${seat.idx})"` : `onclick="openManualAssign(${dayIndex}, ${seat.idx})"`;
             const showDate = (seatIdx === 0);
 
             let errorHtml = '';
@@ -477,11 +477,11 @@ window.renderResults = function (unassigned) {
             tr.innerHTML = `
                 <td class="px-6 py-2 ${showDate ? '' : 'text-transparent select-none'} font-mono uppercase">${dateStr}</td>
                 <td class="px-6 py-2 ${cls} ${showDate ? '' : 'text-transparent select-none'}">${getDayName(day.date)}</td>
-                <td class="${errorClass}">
-                     <div class="font-bold ${seat.pid ? '' : 'text-red-500'} ${assignClass}" ${assignClick}>
+                <td class="${errorClass} flex items-center flex-wrap">
+                     <div class="font-bold cursor-pointer transition ${seat.pid ? 'hover:bg-blue-50 px-2 rounded -ml-2' : 'text-red-500'} ${assignClass}" ${assignClick} title="${seat.pid ? 'Pulse para fijar/liberar guardia (Día Exigido)' : 'Asignar manual'}">
                         ${seat.name || 'VACÍO (Click to Add)'}
                     </div>
-                    ${seat.locked ? '<i class="fas fa-lock text-xs text-gray-400 ml-2 cursor-pointer hover:text-gray-600" title="Desbloquear (Manual / Exigido)" onclick="unlockSlot(\'' + day.date + '\', ' + seat.idx + ')"></i>' : ''}
+                    ${seat.locked ? '<i class="fas fa-lock text-xs text-gray-400 ml-2 cursor-pointer hover:text-gray-600" title="Desbloquear (Manual / Exigido)" onclick="window.toggleLockSlot(\'' + day.date + '\', ' + seat.idx + ')"></i>' : ''}
                     ${warnIcon}
                     ${errorHtml}
                 </td>

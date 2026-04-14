@@ -243,19 +243,31 @@ window.clearSlot = function (dateIso, seatIdx) {
     }
 }
 
-window.unlockSlot = function(dateIso, seatIdx) {
+window.toggleLockSlot = function(dateIso, seatIdx) {
     const day = window.appData.schedule.find(s => s.date === dateIso);
     if (day && day.seats[seatIdx]) {
         const slot = day.seats[seatIdx];
         const pid = slot.pid;
         if (pid) {
-            slot.locked = false;
             const p = window.appData.people.find(x => x.id === pid);
-            if (p && p.required) {
-                p.required = p.required.filter(d => d !== dateIso);
+            if (slot.locked) {
+                slot.locked = false;
+                if (p && p.required) {
+                    p.required = p.required.filter(d => d !== dateIso);
+                }
+                updateData();
+                showToast('Día desbloqueado (ya no es fijo)', 'success');
+            } else {
+                slot.locked = true;
+                if (p) {
+                    if (!p.required) p.required = [];
+                    if (!p.required.includes(dateIso)) p.required.push(dateIso);
+                    if (p.blocked.includes(dateIso)) p.blocked = p.blocked.filter(d => d !== dateIso);
+                    if (p.suggested && p.suggested.includes(dateIso)) p.suggested = p.suggested.filter(d => d !== dateIso);
+                }
+                updateData();
+                showToast('Día bloqueado (ahora es fijo)', 'success');
             }
-            updateData();
-            showToast('Día desbloqueado (ya no es fijo)', 'success');
         }
     }
 }
